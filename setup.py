@@ -7,9 +7,6 @@ from pathlib import Path
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
-with open("pygadjoints/_version.py") as f:
-    version = eval(f.read().strip().split("=")[-1])
-
 # taken from pybind cmake example
 # https://github.com/pybind/cmake_example/blob/master/setup.py
 
@@ -162,7 +159,7 @@ with open("README.md") as readme:
 
 setup(
     name="pygadjoints",
-    version=version,
+    version="0.0.0",
     author="Jacques Zwar",
     author_email="jacqueszwar@gmail.com",
     description="python gismo adjoints",
