@@ -166,9 +166,6 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/tataratat/pygadjoints",
-    packages=[
-        "pygadjoints",
-    ],
     install_requires=[
         "numpy",
     ],
