@@ -1,6 +1,7 @@
 set(PYGADJOINTS_SRCS
         py_elasticity.cpp
-        pygadjoints.cpp)
+        pygadjoints.cpp
+        custom_expression.hpp)
 
 # add target
 pybind11_add_module(pygadjoints ${PYGADJOINTS_SRCS})
