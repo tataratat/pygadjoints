@@ -25,10 +25,10 @@ void add_adjoint_class(py::module_& m) {
            py::arg("fname"), py::arg("plot_elements"), py::arg("sample_rate"))
       .def("export_xml", &pygadjoints::LinearElasticityProblem::ExportXML,
            py::arg("fname"))
-#ifdef _OPENMP
+#ifdef PYGADJOINTS_USE_OPENMP
       .def("set_number_of_threads",
            &pygadjoints::LinearElasticityProblem::SetNumberOfThreads,
-           py::arg("nthreads"));
+           py::arg("nthreads"))
 #endif
   .def("print", &pygadjoints::LinearElasticityProblem::print, py::arg("int"));
 }

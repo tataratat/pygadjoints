@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.1)
 project(pygadjoints VERSION 0.0.0 LANGUAGES CXX)
 
+# pygadjoints options
+option(PYGADJOINTS_USE_OPENMP "Uses openmp" ON)
+
 # config
 set(exe_dest "bin")
 set(incl_dest "include")

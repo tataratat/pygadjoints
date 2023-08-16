@@ -16,3 +16,10 @@ target_compile_features(pygadjoints PUBLIC cxx_std_17)
 # link splinepy
 target_link_libraries(pygadjoints PRIVATE gismo)
 target_include_directories(pygadjoints PRIVATE ${GISMO_INCLUDE_DIRS})
+
+# def
+if (PYGADJOINTS_USE_OPENMP)
+  find_package(OpenMP REQUIRED)
+  target_compile_definitions(pygadjoints PRIVATE PYGADJOINTS_USE_OPENMP)
+  target_link_libraries(pygadjoints PRIVATE OpenMP::OpenMP_CXX)
+endif()

@@ -1,5 +1,8 @@
 #include <gismo.h>
+
+#ifdef PYGADJOINTS_USE_OPENMP
 #include <omp.h>
+#endif
 
 #include "pygadjoints/custom_expression.hpp"
 
@@ -18,7 +21,7 @@ class LinearElasticityProblem {
  public:
   LinearElasticityProblem() {
     expr_assembler_pde = std::make_shared<gsExprAssembler<>>(1, 1);
-#ifdef _OPENMP
+#ifdef PYGADJOINTS_USE_OPENMP
     omp_set_num_threads(std::min(omp_get_max_threads(), n_omp_threads));
 #endif
   };
@@ -89,7 +92,7 @@ class LinearElasticityProblem {
     }
   }
 
-#ifdef _OPENMP
+#ifdef PYGADJOINTS_USE_OPENMP
   /**
    * @brief Set the Number Of Threads for OpenMP
    *
@@ -240,7 +243,7 @@ class LinearElasticityProblem {
   std::shared_ptr<geometryMap> geometric_mapping_ptr = nullptr;
   std::shared_ptr<gsMultiBasis<>> function_basis = nullptr;
 
-#ifdef _OPENMP
+#ifdef PYGADJOINTS_USE_OPENMP
   int n_omp_threads{1};
 #endif
 };
