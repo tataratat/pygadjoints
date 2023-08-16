@@ -21,6 +21,7 @@ class LinearElasticityProblem {
  public:
   LinearElasticityProblem() {
     expr_assembler_pde = std::make_shared<gsExprAssembler<>>(1, 1);
+    mp_pde = std::make_shared<gsMultiPatch<>>();
 #ifdef PYGADJOINTS_USE_OPENMP
     omp_set_num_threads(std::min(omp_get_max_threads(), n_omp_threads));
 #endif
@@ -60,7 +61,7 @@ class LinearElasticityProblem {
     collection.options().setSwitch("plotElements", true);
     collection.options().setInt("numPoints", plot_elements);
     collection.options().setInt("plotElements.resolution", sample_rate);
-    collection.newTimeStep(&mp_pde);
+    collection.newTimeStep(mp_pde.get());
     collection.addField(*solution_expression, "displacement");
     collection.saveTimeStep();
     collection.save();
@@ -105,28 +106,35 @@ class LinearElasticityProblem {
   }
 #endif
 
-  void ComputeLinearElasticityProblem(const std::string& filename) {
+  void ReadInputFromFile(const std::string& filename) {
     // IDs in the text file (might change later)
     const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{3};
 
     // Import mesh and load relevant information
     gsFileData<> fd(filename);
-    fd.getId(mp_id, mp_pde);
+    fd.getId(mp_id, *mp_pde);
     fd.getId(source_id, neumann_function);
     fd.getId(bc_id, boundary_conditions);
-    boundary_conditions.setGeoMap(mp_pde);
+    boundary_conditions.setGeoMap(*mp_pde);
     gsOptionList Aopt;
     fd.getId(ass_opt_id, Aopt);
 
     // Set Options in expression assembler
+    std::cout << "Test 1";
     expr_assembler_pde->setOptions(Aopt);
   }
 
   void Init(const int numRefine) {
     //! [Refinement]
-    function_basis = std::make_shared<gsMultiBasis<>>(mp_pde, true);
+    std::cout << "Test 1";
+    if (!mp_pde) {
+      std::cout << ("Multipatch is not initialized!");
+      return;
+    }
+    function_basis = std::make_shared<gsMultiBasis<>>(*mp_pde, true);
 
     // h-refine each basis
+    std::cout << "Test 0";
     for (int r = 0; r < numRefine; ++r) {
       function_basis->uniformRefine();
     }
@@ -135,14 +143,17 @@ class LinearElasticityProblem {
     expr_assembler_pde->setIntegrationElements(*function_basis);
 
     // Set the geometry map
+    std::cout << "Test 1";
     geometric_mapping_ptr =
-        std::make_shared<geometryMap>(expr_assembler_pde->getMap(mp_pde));
+        std::make_shared<geometryMap>(expr_assembler_pde->getMap(*mp_pde));
 
     // Set the discretization space
+    std::cout << "Test 12";
     basis_function_ptr = std::make_shared<space>(
-        expr_assembler_pde->getSpace(*function_basis, mp_pde.geoDim()));
+        expr_assembler_pde->getSpace(*function_basis, mp_pde->geoDim()));
 
     // Solution vector and solution variable
+    std::cout << "Test 13";
     solution_expression = std::make_shared<solution>(
         expr_assembler_pde->getSolution(*basis_function_ptr, solVector));
 
@@ -222,7 +233,7 @@ class LinearElasticityProblem {
   std::shared_ptr<gsExprAssembler<>> expr_assembler_pde = nullptr;
 
   /// Multipatch object of the forward problem
-  gsMultiPatch<> mp_pde;
+  std::shared_ptr<gsMultiPatch<>> mp_pde = nullptr;
 
   /// Expression that describes the last calculated solution
   std::shared_ptr<solution> solution_expression = nullptr;

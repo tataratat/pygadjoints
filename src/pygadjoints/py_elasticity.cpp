@@ -11,10 +11,9 @@ void add_adjoint_class(py::module_& m) {
       .def("set_material_constants",
            &pygadjoints::LinearElasticityProblem::SetMaterialConstants,
            py::arg("lame_lambda"), py::arg("lame_mu"), py::arg("mu"))
-      .def(
-          "read_from_input_file",
-          &pygadjoints::LinearElasticityProblem::ComputeLinearElasticityProblem,
-          py::arg("fname"))
+      .def("read_from_input_file",
+           &pygadjoints::LinearElasticityProblem::ReadInputFromFile,
+           py::arg("fname"))
       .def("init", &pygadjoints::LinearElasticityProblem::Init,
            py::arg("refinements"))
       .def("assemble", &pygadjoints::LinearElasticityProblem::Assemble)
@@ -30,5 +29,6 @@ void add_adjoint_class(py::module_& m) {
            &pygadjoints::LinearElasticityProblem::SetNumberOfThreads,
            py::arg("nthreads"))
 #endif
-  .def("print", &pygadjoints::LinearElasticityProblem::print, py::arg("int"));
+      .def("print", &pygadjoints::LinearElasticityProblem::print,
+           py::arg("int"));
 }
