@@ -23,6 +23,6 @@ target_compile_options(pygadjoints
         ${PYGADJOINTS_OPTIMIZATION_FLAGS})
 target_compile_features(pygadjoints PUBLIC cxx_std_17)
 
-# link splinepy
+# link gismo
 target_link_libraries(pygadjoints PRIVATE gismo)
 target_include_directories(pygadjoints PRIVATE ${GISMO_INCLUDE_DIRS})

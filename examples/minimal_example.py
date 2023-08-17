@@ -17,4 +17,4 @@ linear_solver.assemble()
 end = timer()
 print(end - start) 
 linear_solver.solve_linear_system()
-linear_solver.export_
+linear_solver.export_xml()

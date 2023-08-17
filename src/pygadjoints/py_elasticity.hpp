@@ -19,9 +19,7 @@ class LinearElasticityProblem {
   typedef gsExprAssembler<>::solution solution;
 
  public:
-  LinearElasticityProblem() {
-    expr_assembler_pde = std::make_shared<gsExprAssembler<>>(1, 1);
-    mp_pde = std::make_shared<gsMultiPatch<>>();
+  LinearElasticityProblem() : expr_assembler_pde(1, 1) {
 #ifdef PYGADJOINTS_USE_OPENMP
     omp_set_num_threads(std::min(omp_get_max_threads(), n_omp_threads));
 #endif
@@ -54,14 +52,14 @@ class LinearElasticityProblem {
   double ExportParaview(const std::string& fname, const bool& plot_elements,
                         const int& sample_rate) {
     // Generate Paraview File
-    gsExprEvaluator<> expression_evaluator(*expr_assembler_pde);
+    gsExprEvaluator<> expression_evaluator(expr_assembler_pde);
     timer.restart();
     gsParaviewCollection collection("ParaviewOutput/" + fname,
                                     &expression_evaluator);
     collection.options().setSwitch("plotElements", true);
     collection.options().setInt("numPoints", plot_elements);
     collection.options().setInt("plotElements.resolution", sample_rate);
-    collection.newTimeStep(mp_pde.get());
+    collection.newTimeStep(&mp_pde);
     collection.addField(*solution_expression, "displacement");
     collection.saveTimeStep();
     collection.save();
@@ -113,27 +111,21 @@ class LinearElasticityProblem {
 
     // Import mesh and load relevant information
     gsFileData<> fd(filename);
-    fd.getId(mp_id, *mp_pde);
+    fd.getId(mp_id, mp_pde);
     fd.getId(source_id, neumann_function);
     fd.getId(bc_id, boundary_conditions);
-    boundary_conditions.setGeoMap(*mp_pde);
+    boundary_conditions.setGeoMap(mp_pde);
     gsOptionList Aopt;
     fd.getId(ass_opt_id, Aopt);
 
     // Set Options in expression assembler
-    expr_assembler_pde->setOptions(Aopt);
-    // std::cout << *mp_pde << std::endl;
-    // std::cout << neumann_function << std::endl;
-    // std::cout << *boundary_conditions << std::endl;
+    expr_assembler_pde.setOptions(Aopt);
   }
 
   void Init(const int numRefine) {
+    std::cout << expr_assembler_pde.options();
     //! [Refinement]
-    if (!mp_pde) {
-      std::cout << ("Multipatch is not initialized!");
-      return;
-    }
-    function_basis = gsMultiBasis<>(*mp_pde, true);
+    function_basis = gsMultiBasis<>(mp_pde, true);
 
     // h-refine each basis
     for (int r = 0; r < numRefine; ++r) {
@@ -141,44 +133,33 @@ class LinearElasticityProblem {
     }
 
     // Elements used for numerical integration
-    if (!expr_assembler_pde) {
-      std::cout << "ExprAssembler object uninitialized" << std::endl;
-    }
-    expr_assembler_pde->setIntegrationElements(function_basis);
-
-    // Set the geometry map
-    geometric_mapping_ptr =
-        std::make_shared<geometryMap>(expr_assembler_pde->getMap(*mp_pde));
-    std::cout << "\nGeometric mapping : \n\n"
-              << *geometric_mapping_ptr << std::endl;
+    expr_assembler_pde.setIntegrationElements(function_basis);
 
     // Set the discretization space
-    basis_function_ptr = std::make_shared<space>(
-        expr_assembler_pde->getSpace(function_basis, mp_pde->geoDim()));
-    std::cout << "\nbasis_function_ptr : \n\n"
-              << *basis_function_ptr << std::endl;
+    space basis_function_ptr =
+        expr_assembler_pde.getSpace(function_basis, mp_pde.geoDim());
 
     // Solution vector and solution variable
     solution_expression = std::make_shared<solution>(
-        expr_assembler_pde->getSolution(*basis_function_ptr, solVector));
-    std::cout << "\nsolution_expression : \n\n"
-              << *solution_expression << std::endl;
-    basis_function_ptr->setup(boundary_conditions, dirichlet::l2Projection, 0);
+        expr_assembler_pde.getSolution(basis_function_ptr, solVector));
 
-    // Initialize   the system
-    expr_assembler_pde->initSystem();
-    std::cout << "SUCCESS" << std::endl;
+    std::cout << "SUCCESS0" << std::endl;
+    basis_function_ptr.setup(boundary_conditions, dirichlet::l2Projection, 0);
+
+    std::cout << "SUCCESS1" << std::endl;
+    // Initialize the system
+    expr_assembler_pde.initSystem();
+    std::cout << "SUCCESS2" << std::endl;
   }
 
   void Assemble() {
-    if ((!expr_assembler_pde) || (!basis_function_ptr) ||
-        (!geometric_mapping_ptr)) {
+    if (!basis_function_ptr) {
       std::cerr << "ERROR";
       return;
     }
 
     // Auxiliary variables for readability
-    const geometryMap& geometric_mapping = *geometric_mapping_ptr;
+    geometryMap geometric_mapping = expr_assembler_pde.getMap(mp_pde);
     const space& basis_function = *basis_function_ptr;
 
     // Compute the system matrix and right-hand side
@@ -194,21 +175,21 @@ class LinearElasticityProblem {
 
     // Set the bc term
     auto neumann_function_expression =
-        expr_assembler_pde->getCoeff(neumann_function, *geometric_mapping_ptr);
+        expr_assembler_pde.getCoeff(neumann_function, geometric_mapping);
     auto lin_form = rho_ * basis_function * neumann_function_expression *
                     meas(geometric_mapping);
 
     auto bilin_combined = (bilin_lambda + bilin_mu_1 + bilin_mu_2);
 
     // Assemble
-    expr_assembler_pde->assemble(bilin_combined);
-    expr_assembler_pde->assemble(lin_form);
+    expr_assembler_pde.assemble(bilin_combined);
+    expr_assembler_pde.assemble(lin_form);
 
     // Compute the Neumann terms defined on physical space
-    auto g_N = expr_assembler_pde->getBdrFunction(geometric_mapping);
+    auto g_N = expr_assembler_pde.getBdrFunction(geometric_mapping);
 
     // Neumann conditions
-    expr_assembler_pde->assembleBdr(
+    expr_assembler_pde.assembleBdr(
         boundary_conditions.get("Neumann"),
         basis_function * g_N * nv(geometric_mapping).norm());
   }
@@ -218,12 +199,12 @@ class LinearElasticityProblem {
     // Linear Solver //
     ///////////////////
     timer.restart();
-    const auto& matrix_in_initial_configuration = expr_assembler_pde->matrix();
+    const auto& matrix_in_initial_configuration = expr_assembler_pde.matrix();
 
     // Initialize linear solver
     gsSparseSolver<>::CGDiagonal solver;
     solver.compute(matrix_in_initial_configuration);
-    solVector = solver.solve(expr_assembler_pde->rhs());
+    solVector = solver.solve(expr_assembler_pde.rhs());
   }
 
  private:
@@ -237,10 +218,10 @@ class LinearElasticityProblem {
 
   // -------------------------
   /// Expression assembler related to the forward problem
-  std::shared_ptr<gsExprAssembler<>> expr_assembler_pde = nullptr;
+  gsExprAssembler<> expr_assembler_pde;
 
   /// Multipatch object of the forward problem
-  std::shared_ptr<gsMultiPatch<>> mp_pde = nullptr;
+  gsMultiPatch<> mp_pde;
 
   /// Expression that describes the last calculated solution
   std::shared_ptr<solution> solution_expression = nullptr;
@@ -257,11 +238,8 @@ class LinearElasticityProblem {
   /// Neumann function
   gsFunctionExpr<> neumann_function{};
 
-  /// Geometric Map
-  std::shared_ptr<geometryMap> geometric_mapping_ptr = nullptr;
-
   /// Function basis
-  gsMultiBasis<> function_basis;
+  gsMultiBasis<> function_basis{};
 
 #ifdef PYGADJOINTS_USE_OPENMP
   int n_omp_threads{1};
