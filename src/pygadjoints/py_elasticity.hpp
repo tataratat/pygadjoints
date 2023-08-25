@@ -1,4 +1,6 @@
 #include <gismo.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
 
 #ifdef PYGADJOINTS_USE_OPENMP
 #include <omp.h>
@@ -9,6 +11,8 @@
 namespace pygadjoints {
 
 using namespace gismo;
+
+namespace py = pybind11;
 
 /// @brief
 class LinearElasticityProblem {
@@ -60,7 +64,7 @@ class LinearElasticityProblem {
     collection.options().setInt("numPoints", plot_elements);
     collection.options().setInt("plotElements.resolution", sample_rate);
     collection.newTimeStep(&mp_pde);
-    collection.addField(*solution_expression, "displacement");
+    collection.addField(*solution_expression_ptr, "displacement");
     collection.saveTimeStep();
     collection.save();
     return timer.stop();
@@ -79,7 +83,7 @@ class LinearElasticityProblem {
     gsMatrix<> full_solution;
     gsFileData<> output;
     output << solVector;
-    solution_expression->extractFull(full_solution);
+    solution_expression_ptr->extractFull(full_solution);
     output << full_solution;
     output.save(fname + ".xml");
     return timer.stop();
@@ -136,20 +140,17 @@ class LinearElasticityProblem {
     expr_assembler_pde.setIntegrationElements(function_basis);
 
     // Set the discretization space
-    space basis_function_ptr =
-        expr_assembler_pde.getSpace(function_basis, mp_pde.geoDim());
+    basis_function_ptr = std::make_shared<space>(
+        expr_assembler_pde.getSpace(function_basis, mp_pde.geoDim()));
 
     // Solution vector and solution variable
-    solution_expression = std::make_shared<solution>(
-        expr_assembler_pde.getSolution(basis_function_ptr, solVector));
+    solution_expression_ptr = std::make_shared<solution>(
+        expr_assembler_pde.getSolution(*basis_function_ptr, solVector));
 
-    std::cout << "SUCCESS0" << std::endl;
-    basis_function_ptr.setup(boundary_conditions, dirichlet::l2Projection, 0);
+    basis_function_ptr->setup(boundary_conditions, dirichlet::l2Projection, 0);
 
-    std::cout << "SUCCESS1" << std::endl;
     // Initialize the system
     expr_assembler_pde.initSystem();
-    std::cout << "SUCCESS2" << std::endl;
   }
 
   void Assemble() {
@@ -207,6 +208,44 @@ class LinearElasticityProblem {
     solVector = solver.solve(expr_assembler_pde.rhs());
   }
 
+  double ComputeVolume() {
+    // Compute volume of domain
+    gsExprEvaluator<> expression_evaluator(expr_assembler_pde);
+    return expression_evaluator.integral(
+        meas(expr_assembler_pde.getMap(mp_pde)));
+  }
+
+  double ComputeObjectiveFunction() {
+    // Compute volume of domain
+    gsExprEvaluator<> expression_evaluator(expr_assembler_pde);
+    return expression_evaluator.integral(
+        meas(expr_assembler_pde.getMap(mp_pde)));
+  }
+
+  py::array_t<double> ComputeVolumeDerivativeToCTPS() {
+    // Compute the derivative of the volume of the domain with respect to the
+    // control points
+    // Auxiliary expressions
+    const space& basis_function = *basis_function_ptr;
+    auto jacobian = jac(expr_assembler_pde.getMap(mp_pde));    // validated
+    auto inv_jacs = jacobian.ginv();                           // validated
+    auto meas_expr = meas(expr_assembler_pde.getMap(mp_pde));  // validated
+    auto djacdc = jac(basis_function);                         // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();                  // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace();        // validated
+
+    expr_assembler_pde.clearRhs();
+    expr_assembler_pde.assemble(meas_expr_dx.tr());
+    const auto& volume_deriv = expr_assembler_pde.rhs();
+
+    py::array_t<double> derivative(volume_deriv.size());
+    double* derivative_ptr = static_cast<double*>(derivative.request().ptr);
+    for (int i{}; i < volume_deriv.size(); i++) {
+      derivative_ptr[i] = volume_deriv(i, 0);
+    }
+    return derivative;
+  }
+
  private:
   // -------------------------
   /// First Lame constant
@@ -224,7 +263,7 @@ class LinearElasticityProblem {
   gsMultiPatch<> mp_pde;
 
   /// Expression that describes the last calculated solution
-  std::shared_ptr<solution> solution_expression = nullptr;
+  std::shared_ptr<solution> solution_expression_ptr = nullptr;
 
   /// Expression that describes the last calculated solution
   std::shared_ptr<space> basis_function_ptr = nullptr;

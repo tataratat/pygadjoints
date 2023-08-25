@@ -17,6 +17,11 @@ void add_adjoint_class(py::module_& m) {
       .def("init", &pygadjoints::LinearElasticityProblem::Init,
            py::arg("refinements"))
       .def("assemble", &pygadjoints::LinearElasticityProblem::Assemble)
+      .def("volume", &pygadjoints::LinearElasticityProblem::ComputeVolume)
+      .def("objective_function",
+           &pygadjoints::LinearElasticityProblem::ComputeObjectiveFunction)
+      .def("volume_deris_wrt_ctps",
+           &pygadjoints::LinearElasticityProblem::ComputeVolumeDerivativeToCTPS)
       .def("solve_linear_system",
            &pygadjoints::LinearElasticityProblem::SolveLinearSystem)
       .def("export_paraview",
