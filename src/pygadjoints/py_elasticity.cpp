@@ -7,28 +7,45 @@ namespace py = pybind11;
 void add_adjoint_class(py::module_& m) {
   py::class_<pygadjoints::LinearElasticityProblem> klasse(
       m, "LinearElasticityProblem");
-  klasse.def(py::init<>())
+  klasse
+      .def(py::init<>())
+      // Manipulating the problem and initialization
+      .def("init", &pygadjoints::LinearElasticityProblem::Init,
+           py::arg("refinements"))
       .def("set_material_constants",
            &pygadjoints::LinearElasticityProblem::SetMaterialConstants,
            py::arg("lame_lambda"), py::arg("lame_mu"), py::arg("mu"))
+
+      // IO routines
       .def("read_from_input_file",
            &pygadjoints::LinearElasticityProblem::ReadInputFromFile,
            py::arg("fname"))
-      .def("init", &pygadjoints::LinearElasticityProblem::Init,
-           py::arg("refinements"))
+      .def("read_control_point_sensitivities",
+           &pygadjoints::LinearElasticityProblem::GetParameterSensitivities,
+           py::arg("fname"))
+      .def("export_paraview",
+           &pygadjoints::LinearElasticityProblem::ExportParaview,
+           py::arg("fname"), py::arg("plot_elements"), py::arg("sample_rate"),
+           py::arg("binary"))
+      .def("export_xml", &pygadjoints::LinearElasticityProblem::ExportXML,
+           py::arg("fname"))
+
+      // Assembly and Solving the linear problem
       .def("assemble", &pygadjoints::LinearElasticityProblem::Assemble)
+      .def("solve_linear_system",
+           &pygadjoints::LinearElasticityProblem::SolveLinearSystem)
+
+      // Scalar measures and their derivatives
       .def("volume", &pygadjoints::LinearElasticityProblem::ComputeVolume)
       .def("objective_function",
            &pygadjoints::LinearElasticityProblem::ComputeObjectiveFunction)
+      .def("objective_function_deris_wrt_ctps",
+           &pygadjoints::LinearElasticityProblem::
+               ComputeObjectiveFunctionDerivativeWrtCTPS)
       .def("volume_deris_wrt_ctps",
            &pygadjoints::LinearElasticityProblem::ComputeVolumeDerivativeToCTPS)
-      .def("solve_linear_system",
-           &pygadjoints::LinearElasticityProblem::SolveLinearSystem)
-      .def("export_paraview",
-           &pygadjoints::LinearElasticityProblem::ExportParaview,
-           py::arg("fname"), py::arg("plot_elements"), py::arg("sample_rate"))
-      .def("export_xml", &pygadjoints::LinearElasticityProblem::ExportXML,
-           py::arg("fname"))
+
+  // OpenMP specifics
 #ifdef PYGADJOINTS_USE_OPENMP
       .def("set_number_of_threads",
            &pygadjoints::LinearElasticityProblem::SetNumberOfThreads,
