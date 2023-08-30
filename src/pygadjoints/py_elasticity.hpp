@@ -213,7 +213,7 @@ class LinearElasticityProblem {
     system_rhs = std::make_shared<gsMatrix<>>(expr_assembler_pde.rhs());
 
     // Clear for future evaluations
-    expr_assembler_pde.clearMatrix();
+    expr_assembler_pde.clearMatrix(true);
     expr_assembler_pde.clearRhs();
   }
 
@@ -266,7 +266,7 @@ class LinearElasticityProblem {
     return derivative;
   }
 
-  py::array_t<double> ComputeObjectiveFunctionDerivativeWrtCTPS() {
+  void SolveAdjointProblem() {
     // Auxiliary references
     const geometryMap& geometric_mapping = *geometry_expression_ptr;
     const space& basis_function = *basis_function_ptr;
@@ -276,8 +276,10 @@ class LinearElasticityProblem {
     // Derivative of Objective Function //
     //////////////////////////////////////
     expr_assembler_pde.clearRhs();
+    // Note that we assemble the negative part of the equation to avoid a copy
+    // after solving
     expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
-                                   2 * basis_function * solution_expression *
+                                   -2 * basis_function * solution_expression *
                                        nv(geometric_mapping).norm());
     const auto objective_function_derivative = expr_assembler_pde.rhs();
 
@@ -290,15 +292,29 @@ class LinearElasticityProblem {
 
     // Initialize linear solver
     gsSparseSolver<>::CGDiagonal solverAdjoint;
-    gsMatrix<> lagrange_multipliers;
     solverAdjoint.compute(matrix_in_initial_configuration);
-    lagrange_multipliers = -solverAdjoint.solve(expr_assembler_pde.rhs());
+    lagrange_multipliers_ptr = std::make_shared<gsMatrix<>>(
+        solverAdjoint.solve(expr_assembler_pde.rhs()));
+    expr_assembler_pde.clearMatrix();
+    expr_assembler_pde.clearRhs();
+  }
+
+  py::array_t<double> ComputeObjectiveFunctionDerivativeWrtCTPS() {
+    // Check if all required information is available
+    if (!(geometry_expression_ptr && basis_function_ptr &&
+          solution_expression_ptr && lagrange_multipliers_ptr)) {
+      throw std::runtime_error(
+          "Some of the required values are not yet initialized.");
+    }
+
+    // Auxiliary references
+    const geometryMap& geometric_mapping = *geometry_expression_ptr;
+    const space& basis_function = *basis_function_ptr;
+    const solution& solution_expression = *solution_expression_ptr;
 
     ////////////////////////////////
     // Derivative of the LHS Form //
     ////////////////////////////////
-    expr_assembler_pde.clearMatrix();
-    expr_assembler_pde.clearRhs();
 
     // Auxiliary expressions
     auto jacobian = jac(geometric_mapping);              // validated
@@ -378,7 +394,7 @@ class LinearElasticityProblem {
     // Compute sensitivities //
     ///////////////////////////
     const auto sensitivities =
-        lagrange_multipliers.transpose() * expr_assembler_pde.matrix();
+        lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix();
 
     // Write eigen matrix into a py::array
     py::array_t<double> sensitivities_py(sensitivities.size());
@@ -457,6 +473,42 @@ class LinearElasticityProblem {
                                          static_cast<int>(design_dimension)));
   }
 
+  void UpdateGeometry(const std::string& fname, const bool& topology_changes) {
+    if (topology_changes) {
+      throw std::runtime_error("Not Implemented!");
+    }
+
+    // Import mesh and load relevant information
+    gsMultiPatch<> mp_new;
+
+    gsFileData<> fd(fname);
+    fd.getId(0, mp_new);
+    // Ignore all other information!
+    if (mp_new.nPatches() != mp_pde.nPatches()) {
+      throw std::runtime_error(
+          "This does not work - I am fucked. Expected number of patches " +
+          std::to_string(mp_pde.nPatches()) + ", but got " +
+          std::to_string(mp_new.nPatches()));
+    }
+    // Manually update coefficients as to not overwrite any precomputed values
+    for (size_t patch_id{}; patch_id < mp_new.nPatches(); patch_id++) {
+      if (mp_new.patch(patch_id).coefs().size() !=
+          mp_pde.patch(patch_id).coefs().size()) {
+        throw std::runtime_error(
+            "This does not work - I am fucked. Expected number of "
+            "coefficients " +
+            std::to_string(mp_pde.patch(patch_id).coefs().size()) +
+            ", but got " +
+            std::to_string(mp_new.patch(patch_id).coefs().size()));
+      }
+      for (int i_coef = 0; i_coef != mp_pde.patch(patch_id).coefs().size();
+           i_coef++) {
+        mp_pde.patch(patch_id).coefs().at(i_coef) =
+            mp_new.patch(patch_id).coefs().at(i_coef);
+      }
+    }
+  }
+
  private:
   // -------------------------
   /// First Lame constant
@@ -499,6 +551,9 @@ class LinearElasticityProblem {
 
   // Linear System RHS
   std::shared_ptr<gsMatrix<>> system_rhs = nullptr;
+
+  // Solution of the adjoint problem
+  std::shared_ptr<gsMatrix<>> lagrange_multipliers_ptr = nullptr;
 
   // DOF-Mapper
   std::shared_ptr<gsDofMapper> dof_mapper_ptr = nullptr;

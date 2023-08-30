@@ -23,6 +23,9 @@ void add_adjoint_class(py::module_& m) {
       .def("read_control_point_sensitivities",
            &pygadjoints::LinearElasticityProblem::GetParameterSensitivities,
            py::arg("fname"))
+      .def("update_geometry",
+           &pygadjoints::LinearElasticityProblem::UpdateGeometry,
+           py::arg("fname"), py::arg("topology_changes"))
       .def("export_paraview",
            &pygadjoints::LinearElasticityProblem::ExportParaview,
            py::arg("fname"), py::arg("plot_elements"), py::arg("sample_rate"),
@@ -34,16 +37,18 @@ void add_adjoint_class(py::module_& m) {
       .def("assemble", &pygadjoints::LinearElasticityProblem::Assemble)
       .def("solve_linear_system",
            &pygadjoints::LinearElasticityProblem::SolveLinearSystem)
+      .def("solve_adjoint_system",
+           &pygadjoints::LinearElasticityProblem::SolveAdjointProblem)
 
       // Scalar measures and their derivatives
       .def("volume", &pygadjoints::LinearElasticityProblem::ComputeVolume)
+      .def("volume_deris_wrt_ctps",
+           &pygadjoints::LinearElasticityProblem::ComputeVolumeDerivativeToCTPS)
       .def("objective_function",
            &pygadjoints::LinearElasticityProblem::ComputeObjectiveFunction)
       .def("objective_function_deris_wrt_ctps",
            &pygadjoints::LinearElasticityProblem::
                ComputeObjectiveFunctionDerivativeWrtCTPS)
-      .def("volume_deris_wrt_ctps",
-           &pygadjoints::LinearElasticityProblem::ComputeVolumeDerivativeToCTPS)
 
   // OpenMP specifics
 #ifdef PYGADJOINTS_USE_OPENMP
