@@ -4,7 +4,7 @@
 
 namespace py = pybind11;
 
-void add_adjoint_class(py::module_& m) {
+void add_adjoint_class(py::module_ &m) {
   py::class_<pygadjoints::LinearElasticityProblem> klasse(
       m, "LinearElasticityProblem");
   klasse

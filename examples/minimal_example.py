@@ -1,10 +1,10 @@
-import pygadjoints
 from timeit import default_timer as timer
-from scipy.sparse import csr_matrix
+
+import pygadjoints
 
 # Current test-file
-# filename = "/home/zwar/Git/pygadjoints/examples/lattice_structure_4x4.xml"
-filename = "/home/zwar/Git/pygadjoints/examples/lattice_structure_24x12.xml"
+filename = "/home/zwar/Git/pygadjoints/examples/lattice_structure_4x4.xml"
+# filename = "/home/zwar/Git/pygadjoints/examples/lattice_structure_24x12.xml"
 
 
 # Initialize the problem (needs to be done only once)
@@ -20,20 +20,20 @@ linear_solver.init(1)
 # First assembly
 start = timer()
 linear_solver.assemble()
-print(f"Assembly time first assembly {timer() - start}") 
+print(f"Assembly time first assembly {timer() - start}")
 start = timer()
 linear_solver.solve_linear_system()
-print(f"Solving time first assembly {timer() - start}") 
+print(f"Solving time first assembly {timer() - start}")
 
 # Second assembly
 start = timer()
 linear_solver.assemble()
-print(f"Assembly time second assembly {timer() - start}") 
+print(f"Assembly time second assembly {timer() - start}")
 start = timer()
 linear_solver.solve_linear_system()
-print(f"Solving time second assembly {timer() - start}") 
+print(f"Solving time second assembly {timer() - start}")
 
-exit () 
+exit()
 linear_solver.export_xml("test_xml.xml")
 linear_solver.export_paraview("solution", False, 100, False)
 print(linear_solver.volume())
