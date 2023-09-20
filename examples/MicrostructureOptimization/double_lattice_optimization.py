@@ -1,5 +1,3 @@
-from timeit import default_timer as timer
-
 import numpy as np
 import scipy
 import splinepy as sp
@@ -133,20 +131,11 @@ class Optimizer:
             return self.current_objective_function_value
 
         # There is no current solution all checks have been performed
-        timer()
         self.linear_solver.assemble()
-        # print(f"Assembly : {timer() - start }s")
-
-        timer()
         self.linear_solver.solve_linear_system()
-        # print(f"Solving  : {timer() - start }s")
         self.current_objective_function_value = (
             self.linear_solver.objective_function()
             * self.scaling_factor_objective_function
-        )
-        # self.finalize()
-        print(
-            f"Params : {parameters} Value : {self.current_objective_function_value}"
         )
         return self.current_objective_function_value
 
@@ -215,7 +204,7 @@ def main():
     # Geometry definition
     length = 2
     height = 1
-    tiling = [12, 4]
+    tiling = [4, 2]
 
     def identifier_function_neumann(x):
         return x[:, 0] >= (tiling[0] - 1) / tiling[0] * length - 1e-12
@@ -223,8 +212,8 @@ def main():
     macro_spline = sp.helpme.create.box(length, height)
     parameter_spline = sp.BSpline(
         degrees=[1, 1],
-        knot_vectors=[[0, 0, 0.25, 0.5, 0.75, 1, 1], [0, 0, 0.5, 1, 1]],
-        control_points=np.ones((5 * 3, 1)) * 0.1,
+        knot_vectors=[[0, 0, 1, 1], [0, 0, 1, 1]],
+        control_points=np.ones((4, 1)) * 0.1,
     )
     optimizer = Optimizer(
         microtile=sp.microstructure.tiles.DoubleLatticeTile(),

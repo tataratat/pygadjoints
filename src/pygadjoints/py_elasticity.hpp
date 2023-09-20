@@ -2,6 +2,8 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include <chrono>
+
 #ifdef PYGADJOINTS_USE_OPENMP
 #include <omp.h>
 #endif
@@ -13,6 +15,29 @@ namespace pygadjoints {
 using namespace gismo;
 
 namespace py = pybind11;
+
+class Timer {
+#if 1
+public:
+  const std::string name;
+  const std::chrono::time_point<std::chrono::high_resolution_clock>
+      starting_time;
+  Timer(const std::string &function_name)
+      : name(function_name),
+        starting_time{std::chrono::high_resolution_clock::now()} {
+    std::cout << "[Timer] : " << std::setw(40) << name << "\tstarted..."
+              << std::endl;
+  }
+
+  ~Timer() {
+    std::cout << "[Timer] : " << std::setw(40) << name << "\tElapsed time : "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::high_resolution_clock::now() - starting_time)
+                     .count()
+              << "ms" << std::endl;
+  }
+#endif
+};
 
 /// @brief
 class LinearElasticityProblem {
@@ -91,12 +116,6 @@ public:
     return timer.stop();
   }
 
-  void print(const int i) {
-    for (int j{}; j < i; j++) {
-      gsWarn << "TEST IF GISMO IS THERE SUCCEEDED, I AM YOUR\n";
-    }
-  }
-
 #ifdef PYGADJOINTS_USE_OPENMP
   /**
    * @brief Set the Number Of Threads for OpenMP
@@ -112,6 +131,7 @@ public:
 #endif
 
   void ReadInputFromFile(const std::string &filename) {
+    const Timer timer("ReadInputFromFile");
     // IDs in the text file (might change later)
     const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{3};
 
@@ -129,6 +149,7 @@ public:
   }
 
   void Init(const std::string &filename, const int numRefine) {
+    const Timer timer("Init");
     // Read input parameters
     ReadInputFromFile(filename);
 
@@ -140,7 +161,6 @@ public:
 
     // h-refine each basis
     for (int r = 0; r < n_refinements; ++r) {
-      std::cout << "Refining" << std::endl;
       function_basis.uniformRefine();
     }
 
@@ -180,6 +200,7 @@ public:
   }
 
   void Assemble() {
+    const Timer timer("Assemble");
     if (!basis_function_ptr) {
       throw std::runtime_error("Error");
     }
@@ -229,6 +250,8 @@ public:
   }
 
   void SolveLinearSystem() {
+    const Timer timer("SolveLinearSystem");
+
     ///////////////////
     // Linear Solver //
     ///////////////////
@@ -244,6 +267,8 @@ public:
   }
 
   double ComputeVolume() {
+    const Timer timer("ComputeVolume");
+
     // Compute volume of domain
     if (!expr_evaluator_ptr) {
       GISMO_ERROR("ExprEvaluator not initialized");
@@ -252,6 +277,7 @@ public:
   }
 
   double ComputeObjectiveFunction() {
+    const Timer timer("ComputeObjectiveFunction");
     if (!geometry_expression_ptr) {
       throw std::runtime_error("Error no geometry expression found.");
     }
@@ -270,6 +296,7 @@ public:
   }
 
   py::array_t<double> ComputeVolumeDerivativeToCTPS() {
+    const Timer timer("ComputeVolumeDerivativeToCTPS");
     // Compute the derivative of the volume of the domain with respect to
     // the control points Auxiliary expressions
     const space &basis_function = *basis_function_ptr;
@@ -293,6 +320,7 @@ public:
   }
 
   void SolveAdjointProblem() {
+    const Timer timer("SolveAdjointProblem");
     // Auxiliary references
     const geometryMap &geometric_mapping = *geometry_expression_ptr;
     const space &basis_function = *basis_function_ptr;
@@ -327,6 +355,7 @@ public:
   }
 
   py::array_t<double> ComputeObjectiveFunctionDerivativeWrtCTPS() {
+    const Timer timer("ComputeObjectiveFunctionDerivativeWrtCTPS");
     // Check if all required information is available
     if (!(geometry_expression_ptr && basis_function_ptr &&
           solution_expression_ptr && lagrange_multipliers_ptr)) {
@@ -445,6 +474,7 @@ public:
   void
   GetParameterSensitivities(std::string filename // Filename for parametrization
   ) {
+    const Timer timer("GetParameterSensitivities");
     gsFileData<> fd(filename);
     gsMultiPatch<> mp;
     fd.getId(0, mp);
@@ -488,6 +518,7 @@ public:
   }
 
   void UpdateGeometry(const std::string &fname, const bool &topology_changes) {
+    const Timer timer("UpdateGeometry");
     if (topology_changes) {
       throw std::runtime_error("Not Implemented!");
     }

@@ -53,6 +53,5 @@ void add_adjoint_class(py::module_ &m) {
            &pygadjoints::LinearElasticityProblem::SetNumberOfThreads,
            py::arg("nthreads"))
 #endif
-      .def("print", &pygadjoints::LinearElasticityProblem::print,
-           py::arg("int"));
+      ;
 }
