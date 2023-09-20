@@ -11,15 +11,12 @@ void add_adjoint_class(py::module_ &m) {
       .def(py::init<>())
       // Manipulating the problem and initialization
       .def("init", &pygadjoints::LinearElasticityProblem::Init,
-           py::arg("refinements"))
+           py::arg("fname"), py::arg("refinements"))
       .def("set_material_constants",
            &pygadjoints::LinearElasticityProblem::SetMaterialConstants,
            py::arg("lame_lambda"), py::arg("lame_mu"), py::arg("mu"))
 
       // IO routines
-      .def("read_from_input_file",
-           &pygadjoints::LinearElasticityProblem::ReadInputFromFile,
-           py::arg("fname"))
       .def("read_control_point_sensitivities",
            &pygadjoints::LinearElasticityProblem::GetParameterSensitivities,
            py::arg("fname"))
