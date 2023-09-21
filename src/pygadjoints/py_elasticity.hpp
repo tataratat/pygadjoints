@@ -86,9 +86,8 @@ public:
     // Generate Paraview File
     gsParaviewCollection collection("ParaviewOutput/" + fname,
                                     expr_evaluator_ptr.get());
-    collection.options().setSwitch("plotElements", true);
+    collection.options().setSwitch("plotElements", plot_elements);
     collection.options().setSwitch("base64", export_b64);
-    collection.options().setInt("numPoints", plot_elements);
     collection.options().setInt("plotElements.resolution", sample_rate);
     collection.options().setInt("numPoints", sample_rate);
     collection.newTimeStep(&mp_pde);
