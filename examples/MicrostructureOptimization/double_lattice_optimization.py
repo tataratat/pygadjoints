@@ -216,7 +216,7 @@ def main():
         control_points=np.ones((4, 1)) * 0.1,
     )
     optimizer = Optimizer(
-        microtile=sp.microstructure.tiles.DoubleLatticeTile(),
+        microtile=sp.microstructure.tiles.DoubleLattice(),
         macro_spline=macro_spline,
         para_spline=parameter_spline,
         identifier_function_neumann=identifier_function_neumann,
