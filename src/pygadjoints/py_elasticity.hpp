@@ -132,19 +132,19 @@ public:
   void ReadInputFromFile(const std::string &filename) {
     const Timer timer("ReadInputFromFile");
     // IDs in the text file (might change later)
-    const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{3};
+    const int mp_id{0}, source_id{1}, bc_id{2};//, ass_opt_id{3};
 
     // Import mesh and load relevant information
     gsFileData<> fd(filename);
     fd.getId(mp_id, mp_pde);
-    fd.getId(source_id, neumann_function);
+    fd.getId(source_id, source_function);
     fd.getId(bc_id, boundary_conditions);
     boundary_conditions.setGeoMap(mp_pde);
-    gsOptionList Aopt;
-    fd.getId(ass_opt_id, Aopt);
+//    gsOptionList Aopt;
+//    fd.getId(ass_opt_id, Aopt);
 
     // Set Options in expression assembler
-    expr_assembler_pde.setOptions(Aopt);
+//    expr_assembler_pde.setOptions(Aopt);
   }
 
   void Init(const std::string &filename, const int numRefine) {
@@ -220,9 +220,9 @@ public:
                       meas(geometric_mapping);
 
     // Set the boundary_conditions term
-    auto neumann_function_expression =
-        expr_assembler_pde.getCoeff(neumann_function, geometric_mapping);
-    auto lin_form = rho_ * basis_function * neumann_function_expression *
+    auto source_expression =
+        expr_assembler_pde.getCoeff(source_function, geometric_mapping);
+    auto lin_form = rho_ * basis_function * source_expression *
                     meas(geometric_mapping);
 
     auto bilin_combined = (bilin_lambda + bilin_mu_1 + bilin_mu_2);
@@ -283,13 +283,16 @@ public:
 
     // Auxiliary
     solution &solution_expression = *solution_expression_ptr;
+    const geometryMap &geometric_mapping = *geometry_expression_ptr;
 
     // Integrate the compliance
     gsExprEvaluator<> expr_evaluator(expr_assembler_pde);
-    real_t obj_value = expr_evaluator.integralBdrBc(
-        boundary_conditions.get("Neumann"),
-        (solution_expression.tr() * (solution_expression)) *
-            nv(*geometry_expression_ptr).norm());
+//    real_t obj_value = expr_evaluator.integral(rho_ * solution_expression.cwisetr() *
+//            expr_assembler_pde.getCoeff(source_function, geometric_mapping) * meas(geometric_mapping)) +
+//                    expr_evaluator.integralBdrBc(boundary_conditions.get("Neumann"), (solution_expression.tr() *
+//                            expr_assembler_pde.getBdrFunction(geometric_mapping)) *
+//                                    nv(*geometry_expression_ptr).norm());
+    real_t obj_value = (system_rhs->transpose() * solVector)(0, 0);
 
     return obj_value;
   }
@@ -331,9 +334,10 @@ public:
     expr_assembler_pde.clearRhs();
     // Note that we assemble the negative part of the equation to avoid a
     // copy after solving
-    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
-                                   -2 * basis_function * solution_expression *
-                                       nv(geometric_mapping).norm());
+    expr_assembler_pde.assemble(rho_ * basis_function * expr_assembler_pde.getCoeff(source_function,
+                                        geometric_mapping) * meas(geometric_mapping));
+    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"), -2 * basis_function * solution_expression *
+                                                                       nv(geometric_mapping).norm());
     const auto objective_function_derivative = expr_assembler_pde.rhs();
 
     /////////////////////////////////
@@ -341,14 +345,13 @@ public:
     /////////////////////////////////
     const gsSparseMatrix<> matrix_in_initial_configuration(
         system_matrix->transpose().eval());
-    auto rhs_vector = expr_assembler_pde.rhs();
 
     // Initialize linear solver
-    gsSparseSolver<>::CGDiagonal solverAdjoint;
+    SolverType solverAdjoint;
     solverAdjoint.compute(matrix_in_initial_configuration);
     // Minus is added in post
     lagrange_multipliers_ptr = std::make_shared<gsMatrix<>>(
-        solverAdjoint.solve(expr_assembler_pde.rhs()));
+        solverAdjoint.solve(objective_function_derivative));
     expr_assembler_pde.clearMatrix(true);
     expr_assembler_pde.clearRhs();
   }
@@ -440,22 +443,42 @@ public:
     auto BL_mu2_dx2 = lame_mu_ * frobenius(BL_mu2_2, BL_mu2_1).cwisetr() *
                       meas_expr_dx; // validated
     // Linear Form Part
-    // auto LF_1 = -rho_ * basis_function * ff * meas_expr;
-    // auto LF_1_dx = -rho_ * basis_function * ff * meas_expr_dx;
+    auto LF_1_dx = -rho_ * basis_function * expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
+                   meas_expr_dx;
 
     // Assemble
-    expr_assembler_pde.assemble(BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 +
-                                    BL_mu2_dx0 + BL_mu2_dx2,
-                                // + LF_1_dx,
-                                BL_mu1_dx1, BL_mu2_dx1);
+    expr_assembler_pde.assemble(BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 + BL_mu2_dx0 + BL_mu2_dx2,
+                                BL_mu1_dx1, BL_mu2_dx1, LF_1_dx);
 
     ///////////////////////////
     // Compute sensitivities //
     ///////////////////////////
-    const auto sensitivities =
-        (lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix()) *
-        (*ctps_sensitivities_matrix_ptr);
+    expr_assembler_pde.clearRhs();
+//    std::cout << "here" << std::endl << std::endl;
+//    std::cout << "solution_expression: " << (solution_expression.cwisetr()).isVector() << std::endl << std::endl;
+//    std::cout << "source: " << expr_assembler_pde.getCoeff(source_function, geometric_mapping).isVector() << std::endl << std::endl;
+//    std::cout << "meas_expr_dx: " << (meas_expr_dx.tr()).isVector() << std::endl << std::endl;
+    
+    gsVector point{3};
+    point << 0.2, 0.5, 0.8;
+    std::cout << expr_evaluator_ptr->eval(LF_1_dx, point, 1) << std::endl << std::endl;
+    gsDebugVar(LF_1_dx);
+//    std::cout << expr_evaluator_ptr->eval(meas_expr_dx.tr(), point, 1) << std::endl << std::endl;
+//    gsDebugVar(meas_expr_dx.tr());
+//    expr_assembler_pde.assemble(rho_ * (solution_expression.cwisetr() *
+//                           expr_assembler_pde.getCoeff(source_function, geometric_mapping)) * meas_expr_dx.tr());
+    expr_assembler_pde.assemble((rho_ * solution_expression.cwisetr() * expr_assembler_pde.getCoeff(source_function,
+                                         geometric_mapping) * meas_expr_dx).tr());
+//    std::cout << "here" << std::endl << std::endl;
+//    std::cout << expr_assembler_pde.rhs().transpose() << std::endl << std::endl;
+      const auto sensitivities =  // 0.71469205
+        (expr_assembler_pde.rhs().transpose() + (lagrange_multipliers_ptr->transpose() *
+                         expr_assembler_pde.matrix())) * (*ctps_sensitivities_matrix_ptr);
+//      const auto sensitivities =  // 0.71469205
+//          (expr_assembler_pde.rhs().transpose() + (solVector.transpose() *
+//                           expr_assembler_pde.matrix())) * (*ctps_sensitivities_matrix_ptr);
 
+//    std::cout << "sensitivities" << sensitivities << std::endl << std::endl;
     // Write eigen matrix into a py::array
     py::array_t<double> sensitivities_py(sensitivities.size());
     double *sensitivities_py_ptr =
@@ -463,6 +486,7 @@ public:
     for (int i{}; i < sensitivities.size(); i++) {
       sensitivities_py_ptr[i] = sensitivities(0, i);
     }
+    
     // Clear for future evaluations
     expr_assembler_pde.clearMatrix(true);
     expr_assembler_pde.clearRhs();
@@ -591,7 +615,7 @@ private:
   gsBoundaryConditions<> boundary_conditions;
 
   /// Neumann function
-  gsFunctionExpr<> neumann_function{};
+  gsFunctionExpr<> source_function{};
 
   /// Function basis
   gsMultiBasis<> function_basis{};
