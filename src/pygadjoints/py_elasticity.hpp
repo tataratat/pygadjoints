@@ -18,7 +18,7 @@ namespace py = pybind11;
 
 class Timer {
 #if 1
-public:
+ public:
   const std::string name;
   const std::chrono::time_point<std::chrono::high_resolution_clock>
       starting_time;
@@ -39,6 +39,13 @@ public:
 #endif
 };
 
+enum class ObjectiveFunction : int {
+  // Use compliance defined as F^{T} u
+  compliance = 1,
+  // Boundary integral on Neumann boundary ||u||^2
+  displacement_norm = 2
+};
+
 /// @brief
 class LinearElasticityProblem {
   // Typedefs
@@ -50,7 +57,7 @@ class LinearElasticityProblem {
   // using SolverType = gsSparseSolver<>::CGDiagonal;
   using SolverType = gsSparseSolver<>::BiCGSTABILUT;
 
-public:
+ public:
   LinearElasticityProblem() : expr_assembler_pde(1, 1) {
 #ifdef PYGADJOINTS_USE_OPENMP
     omp_set_num_threads(std::min(omp_get_max_threads(), n_omp_threads));
@@ -71,6 +78,19 @@ public:
     lame_lambda_ = lambda;
     lame_mu_ = mu;
     rho_ = rho;
+  }
+
+  /**
+   * @brief Set objective function
+   *
+   * @param objective_function 1 : compliance , 2 : displacement norm
+   */
+  void SetObjectiveFunction(const int objective_function_selector) {
+    if (objective_function_selector == 1) {
+      objective_function_ = ObjectiveFunction::compliance;
+    } else if (objective_function_selector == 2) {
+      objective_function_ = ObjectiveFunction::displacement_norm;
+    }
   }
 
   /**
@@ -132,7 +152,7 @@ public:
   void ReadInputFromFile(const std::string &filename) {
     const Timer timer("ReadInputFromFile");
     // IDs in the text file (might change later)
-    const int mp_id{0}, source_id{1}, bc_id{2};//, ass_opt_id{3};
+    const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{3};
 
     // Import mesh and load relevant information
     gsFileData<> fd(filename);
@@ -140,11 +160,11 @@ public:
     fd.getId(source_id, source_function);
     fd.getId(bc_id, boundary_conditions);
     boundary_conditions.setGeoMap(mp_pde);
-//    gsOptionList Aopt;
-//    fd.getId(ass_opt_id, Aopt);
+    gsOptionList Aopt;
+    fd.getId(ass_opt_id, Aopt);
 
     // Set Options in expression assembler
-//    expr_assembler_pde.setOptions(Aopt);
+    expr_assembler_pde.setOptions(Aopt);
   }
 
   void Init(const std::string &filename, const int numRefine) {
@@ -219,11 +239,11 @@ public:
     auto bilin_mu_2 = lame_mu_ * (phys_jacobian % phys_jacobian.tr()) *
                       meas(geometric_mapping);
 
-    // Set the boundary_conditions term
+    // Add volumetric forces to the system
     auto source_expression =
         expr_assembler_pde.getCoeff(source_function, geometric_mapping);
-    auto lin_form = rho_ * basis_function * source_expression *
-                    meas(geometric_mapping);
+    auto lin_form =
+        rho_ * basis_function * source_expression * meas(geometric_mapping);
 
     auto bilin_combined = (bilin_lambda + bilin_mu_1 + bilin_mu_2);
 
@@ -235,9 +255,9 @@ public:
     auto g_N = expr_assembler_pde.getBdrFunction(geometric_mapping);
 
     // Neumann conditions
-    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
-                                   basis_function * g_N *
-                                       nv(geometric_mapping).norm());
+    expr_assembler_pde.assembleBdr(
+        boundary_conditions.get("Neumann"),
+        basis_function * g_N * nv(geometric_mapping).norm());
 
     system_matrix =
         std::make_shared<const gsSparseMatrix<>>(expr_assembler_pde.matrix());
@@ -283,18 +303,22 @@ public:
 
     // Auxiliary
     solution &solution_expression = *solution_expression_ptr;
-    const geometryMap &geometric_mapping = *geometry_expression_ptr;
+    if (objective_function_ == ObjectiveFunction::compliance) {
+      // F^{T} u
+      return (system_rhs->transpose() * solVector)(0, 0);
+    } else {
+      assert((objective_function_ == ObjectiveFunction::displacement_norm));
+      const geometryMap &geometric_mapping = *geometry_expression_ptr;
 
-    // Integrate the compliance
-    gsExprEvaluator<> expr_evaluator(expr_assembler_pde);
-//    real_t obj_value = expr_evaluator.integral(rho_ * solution_expression.cwisetr() *
-//            expr_assembler_pde.getCoeff(source_function, geometric_mapping) * meas(geometric_mapping)) +
-//                    expr_evaluator.integralBdrBc(boundary_conditions.get("Neumann"), (solution_expression.tr() *
-//                            expr_assembler_pde.getBdrFunction(geometric_mapping)) *
-//                                    nv(*geometry_expression_ptr).norm());
-    real_t obj_value = (system_rhs->transpose() * solVector)(0, 0);
+      // Integrate the compliance
+      gsExprEvaluator<> expr_evaluator(expr_assembler_pde);
+      real_t obj_value = expr_evaluator.integralBdrBc(
+          boundary_conditions.get("Neumann"),
+          (solution_expression.tr() * (solution_expression)) *
+              nv(*geometry_expression_ptr).norm());
 
-    return obj_value;
+      return obj_value;
+    }
   }
 
   py::array_t<double> ComputeVolumeDerivativeToCTPS() {
@@ -302,12 +326,12 @@ public:
     // Compute the derivative of the volume of the domain with respect to
     // the control points Auxiliary expressions
     const space &basis_function = *basis_function_ptr;
-    auto jacobian = jac(*geometry_expression_ptr);      // validated
-    auto inv_jacs = jacobian.ginv();                    // validated
-    auto meas_expr = meas(*geometry_expression_ptr);    // validated
-    auto djacdc = jac(basis_function);                  // validated
-    auto aux_expr = (djacdc * inv_jacs).tr();           // validated
-    auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
+    auto jacobian = jac(*geometry_expression_ptr);       // validated
+    auto inv_jacs = jacobian.ginv();                     // validated
+    auto meas_expr = meas(*geometry_expression_ptr);     // validated
+    auto djacdc = jac(basis_function);                   // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();            // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
     expr_assembler_pde.assemble(meas_expr_dx.tr());
 
     const auto volume_deriv =
@@ -323,37 +347,45 @@ public:
 
   void SolveAdjointProblem() {
     const Timer timer("SolveAdjointProblem");
-    // Auxiliary references
-    const geometryMap &geometric_mapping = *geometry_expression_ptr;
-    const space &basis_function = *basis_function_ptr;
-    const solution &solution_expression = *solution_expression_ptr;
+    if (objective_function_ == ObjectiveFunction::compliance) {
+      // - u
+      lagrange_multipliers_ptr = std::make_shared<gsMatrix<>>(-solVector);
+    } else {
+      assert((objective_function_ == ObjectiveFunction::displacement_norm));
 
-    //////////////////////////////////////
-    // Derivative of Objective Function //
-    //////////////////////////////////////
-    expr_assembler_pde.clearRhs();
-    // Note that we assemble the negative part of the equation to avoid a
-    // copy after solving
-    expr_assembler_pde.assemble(rho_ * basis_function * expr_assembler_pde.getCoeff(source_function,
-                                        geometric_mapping) * meas(geometric_mapping));
-    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"), -2 * basis_function * solution_expression *
-                                                                       nv(geometric_mapping).norm());
-    const auto objective_function_derivative = expr_assembler_pde.rhs();
+      const Timer timer("SolveAdjointProblem");
+      // Auxiliary references
+      const geometryMap &geometric_mapping = *geometry_expression_ptr;
+      const space &basis_function = *basis_function_ptr;
+      const solution &solution_expression = *solution_expression_ptr;
 
-    /////////////////////////////////
-    // Solving the adjoint problem //
-    /////////////////////////////////
-    const gsSparseMatrix<> matrix_in_initial_configuration(
-        system_matrix->transpose().eval());
+      //////////////////////////////////////
+      // Derivative of Objective Function //
+      //////////////////////////////////////
+      expr_assembler_pde.clearRhs();
+      // Note that we assemble the negative part of the equation to avoid a
+      // copy after solving
+      expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
+                                     2 * basis_function * solution_expression *
+                                         nv(geometric_mapping).norm());
+      const auto objective_function_derivative = expr_assembler_pde.rhs();
 
-    // Initialize linear solver
-    SolverType solverAdjoint;
-    solverAdjoint.compute(matrix_in_initial_configuration);
-    // Minus is added in post
-    lagrange_multipliers_ptr = std::make_shared<gsMatrix<>>(
-        solverAdjoint.solve(objective_function_derivative));
-    expr_assembler_pde.clearMatrix(true);
-    expr_assembler_pde.clearRhs();
+      /////////////////////////////////
+      // Solving the adjoint problem //
+      /////////////////////////////////
+      const gsSparseMatrix<> matrix_in_initial_configuration(
+          system_matrix->transpose().eval());
+      auto rhs_vector = expr_assembler_pde.rhs();
+
+      // Initialize linear solver
+      SolverType solverAdjoint;
+      solverAdjoint.compute(matrix_in_initial_configuration);
+      // solve adjoint function
+      lagrange_multipliers_ptr = std::make_shared<gsMatrix<>>(
+          -solverAdjoint.solve(expr_assembler_pde.rhs()));
+      expr_assembler_pde.clearMatrix(true);
+      expr_assembler_pde.clearRhs();
+    }
   }
 
   py::array_t<double> ComputeObjectiveFunctionDerivativeWrtCTPS() {
@@ -379,106 +411,99 @@ public:
     ////////////////////////////////
 
     // Auxiliary expressions
-    auto jacobian = jac(geometric_mapping);             // validated
-    auto inv_jacs = jacobian.ginv();                    // validated
-    auto meas_expr = meas(geometric_mapping);           // validated
-    auto djacdc = jac(basis_function);                  // validated
-    auto aux_expr = (djacdc * inv_jacs).tr();           // validated
-    auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
+    auto jacobian = jac(geometric_mapping);              // validated
+    auto inv_jacs = jacobian.ginv();                     // validated
+    auto meas_expr = meas(geometric_mapping);            // validated
+    auto djacdc = jac(basis_function);                   // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();            // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
 
     // Start to assemble the bilinear form with the known solution field
     // 1. Bilinear form of lambda expression separated into 3 individual
     // sections
     auto BL_lambda_1 =
-        idiv(solution_expression, geometric_mapping).val();     // validated
-    auto BL_lambda_2 = idiv(basis_function, geometric_mapping); // validated
+        idiv(solution_expression, geometric_mapping).val();      // validated
+    auto BL_lambda_2 = idiv(basis_function, geometric_mapping);  // validated
     auto BL_lambda =
-        lame_lambda_ * BL_lambda_2 * BL_lambda_1 * meas_expr; // validated
+        lame_lambda_ * BL_lambda_2 * BL_lambda_1 * meas_expr;  // validated
 
     // trace(A * B) = A:B^T
     auto BL_lambda_1_dx = frobenius(
-        aux_expr, ijac(solution_expression, geometric_mapping)); // validated
+        aux_expr, ijac(solution_expression, geometric_mapping));  // validated
     auto BL_lambda_2_dx =
-        (ijac(basis_function, geometric_mapping) % aux_expr); // validated
+        (ijac(basis_function, geometric_mapping) % aux_expr);  // validated
 
     auto BL_lambda_dx =
         lame_lambda_ * BL_lambda_2 * BL_lambda_1 * meas_expr_dx -
         lame_lambda_ * BL_lambda_2_dx * BL_lambda_1 * meas_expr -
-        lame_lambda_ * BL_lambda_2 * BL_lambda_1_dx * meas_expr; // validated
+        lame_lambda_ * BL_lambda_2 * BL_lambda_1_dx * meas_expr;  // validated
 
     // 2. Bilinear form of mu (first part)
     // BL_mu1_2 seems to be in a weird order with [jac0, jac2] leading
     // to [2x(2nctps)]
-    auto BL_mu1_1 = ijac(solution_expression, geometric_mapping); // validated
-    auto BL_mu1_2 = ijac(basis_function, geometric_mapping);      // validated
-    auto BL_mu1 = lame_mu_ * (BL_mu1_2 % BL_mu1_1) * meas_expr;   // validated
+    auto BL_mu1_1 = ijac(solution_expression, geometric_mapping);  // validated
+    auto BL_mu1_2 = ijac(basis_function, geometric_mapping);       // validated
+    auto BL_mu1 = lame_mu_ * (BL_mu1_2 % BL_mu1_1) * meas_expr;    // validated
 
     auto BL_mu1_1_dx = -(ijac(solution_expression, geometric_mapping) *
-                         aux_expr.cwisetr()); //          validated
+                         aux_expr.cwisetr());  //          validated
     auto BL_mu1_2_dx =
-        -(jac(basis_function) * inv_jacs * aux_expr.cwisetr()); // validated
+        -(jac(basis_function) * inv_jacs * aux_expr.cwisetr());  // validated
 
     auto BL_mu1_dx0 =
-        lame_mu_ * BL_mu1_2 % BL_mu1_1_dx * meas_expr; // validated
+        lame_mu_ * BL_mu1_2 % BL_mu1_1_dx * meas_expr;  // validated
     auto BL_mu1_dx1 =
-        lame_mu_ * frobenius(BL_mu1_2_dx, BL_mu1_1) * meas_expr; // validated
+        lame_mu_ * frobenius(BL_mu1_2_dx, BL_mu1_1) * meas_expr;  // validated
     auto BL_mu1_dx2 = lame_mu_ * frobenius(BL_mu1_2, BL_mu1_1).cwisetr() *
-                      meas_expr_dx; // validated
+                      meas_expr_dx;  // validated
 
     // 2. Bilinear form of mu (first part)
     auto BL_mu2_1 =
-        ijac(solution_expression, geometric_mapping).cwisetr(); // validated
-    auto &BL_mu2_2 = BL_mu1_2;                                  // validated
-    auto BL_mu2 = lame_mu_ * (BL_mu2_2 % BL_mu2_1) * meas_expr; // validated
+        ijac(solution_expression, geometric_mapping).cwisetr();  // validated
+    auto &BL_mu2_2 = BL_mu1_2;                                   // validated
+    auto BL_mu2 = lame_mu_ * (BL_mu2_2 % BL_mu2_1) * meas_expr;  // validated
 
     auto inv_jac_T = inv_jacs.tr();
     auto BL_mu2_1_dx = -inv_jac_T * jac(basis_function).tr() * inv_jac_T *
-                       jac(solution_expression).cwisetr(); // validated
-    auto &BL_mu2_2_dx = BL_mu1_2_dx;                       // validated
+                       jac(solution_expression).cwisetr();  // validated
+    auto &BL_mu2_2_dx = BL_mu1_2_dx;                        // validated
 
     auto BL_mu2_dx0 =
-        lame_mu_ * BL_mu2_2 % BL_mu2_1_dx * meas_expr; // validated
+        lame_mu_ * BL_mu2_2 % BL_mu2_1_dx * meas_expr;  // validated
     auto BL_mu2_dx1 =
-        lame_mu_ * frobenius(BL_mu2_2_dx, BL_mu2_1) * meas_expr; // validated
+        lame_mu_ * frobenius(BL_mu2_2_dx, BL_mu2_1) * meas_expr;  // validated
     auto BL_mu2_dx2 = lame_mu_ * frobenius(BL_mu2_2, BL_mu2_1).cwisetr() *
-                      meas_expr_dx; // validated
+                      meas_expr_dx;  // validated
     // Linear Form Part
-    auto LF_1_dx = -rho_ * basis_function * expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
-                   meas_expr_dx;
+    auto LF_1_dx =
+        -rho_ * basis_function *
+        expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
+        meas_expr_dx;
 
     // Assemble
-    expr_assembler_pde.assemble(BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 + BL_mu2_dx0 + BL_mu2_dx2,
-                                BL_mu1_dx1, BL_mu2_dx1, LF_1_dx);
+    expr_assembler_pde.assemble(
+        BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 + BL_mu2_dx0 + BL_mu2_dx2,
+        BL_mu1_dx1, BL_mu2_dx1, LF_1_dx);
 
     ///////////////////////////
     // Compute sensitivities //
     ///////////////////////////
-    expr_assembler_pde.clearRhs();
-//    std::cout << "here" << std::endl << std::endl;
-//    std::cout << "solution_expression: " << (solution_expression.cwisetr()).isVector() << std::endl << std::endl;
-//    std::cout << "source: " << expr_assembler_pde.getCoeff(source_function, geometric_mapping).isVector() << std::endl << std::endl;
-//    std::cout << "meas_expr_dx: " << (meas_expr_dx.tr()).isVector() << std::endl << std::endl;
-    
-    gsVector point{3};
-    point << 0.2, 0.5, 0.8;
-    std::cout << expr_evaluator_ptr->eval(LF_1_dx, point, 1) << std::endl << std::endl;
-    gsDebugVar(LF_1_dx);
-//    std::cout << expr_evaluator_ptr->eval(meas_expr_dx.tr(), point, 1) << std::endl << std::endl;
-//    gsDebugVar(meas_expr_dx.tr());
-//    expr_assembler_pde.assemble(rho_ * (solution_expression.cwisetr() *
-//                           expr_assembler_pde.getCoeff(source_function, geometric_mapping)) * meas_expr_dx.tr());
-    expr_assembler_pde.assemble((rho_ * solution_expression.cwisetr() * expr_assembler_pde.getCoeff(source_function,
-                                         geometric_mapping) * meas_expr_dx).tr());
-//    std::cout << "here" << std::endl << std::endl;
-//    std::cout << expr_assembler_pde.rhs().transpose() << std::endl << std::endl;
-      const auto sensitivities =  // 0.71469205
-        (expr_assembler_pde.rhs().transpose() + (lagrange_multipliers_ptr->transpose() *
-                         expr_assembler_pde.matrix())) * (*ctps_sensitivities_matrix_ptr);
-//      const auto sensitivities =  // 0.71469205
-//          (expr_assembler_pde.rhs().transpose() + (solVector.transpose() *
-//                           expr_assembler_pde.matrix())) * (*ctps_sensitivities_matrix_ptr);
 
-//    std::cout << "sensitivities" << sensitivities << std::endl << std::endl;
+    if (objective_function_ == ObjectiveFunction::compliance) {
+      // Derivative of the objective function with respect to the control points
+      expr_assembler_pde.assemble(
+          (rho_ * solution_expression.cwisetr() *
+           expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
+           meas_expr_dx)
+              .tr());
+    }
+    // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled
+    const auto sensitivities =  // 0.71469205
+        (expr_assembler_pde.rhs().transpose() +
+         (lagrange_multipliers_ptr->transpose() *
+          expr_assembler_pde.matrix())) *
+        (*ctps_sensitivities_matrix_ptr);
+
     // Write eigen matrix into a py::array
     py::array_t<double> sensitivities_py(sensitivities.size());
     double *sensitivities_py_ptr =
@@ -486,7 +511,7 @@ public:
     for (int i{}; i < sensitivities.size(); i++) {
       sensitivities_py_ptr[i] = sensitivities(0, i);
     }
-    
+
     // Clear for future evaluations
     expr_assembler_pde.clearMatrix(true);
     expr_assembler_pde.clearRhs();
@@ -494,8 +519,8 @@ public:
     return sensitivities_py;
   }
 
-  void
-  GetParameterSensitivities(std::string filename // Filename for parametrization
+  void GetParameterSensitivities(
+      std::string filename  // Filename for parametrization
   ) {
     const Timer timer("GetParameterSensitivities");
     gsFileData<> fd(filename);
@@ -580,7 +605,7 @@ public:
     // geometry_expression_ptr->copyCoefs(mp_new);
   }
 
-private:
+ private:
   // -------------------------
   /// First Lame constant
   real_t lame_lambda_{2000000};
@@ -641,9 +666,12 @@ private:
   // Number of refinements in the current iteration
   int dimensionality_{};
 
+  // Objective Function
+  ObjectiveFunction objective_function_{ObjectiveFunction::compliance};
+
 #ifdef PYGADJOINTS_USE_OPENMP
   int n_omp_threads{1};
 #endif
 };
 
-} // namespace pygadjoints
+}  // namespace pygadjoints

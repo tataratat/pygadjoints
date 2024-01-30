@@ -30,6 +30,7 @@ class Optimizer:
         )
         self.linear_solver = pygadjoints.LinearElasticityProblem()
         self.linear_solver.set_number_of_threads(n_threads)
+        self.linear_solver.set_objective_function(1)
         self.last_parameters = None
 
     def prepare_microstructure(self):
@@ -154,7 +155,7 @@ class Optimizer:
     def volume(self, parameters):
         self.ensure_parameters(parameters)
         volume = 1.5 - self.linear_solver.volume()
-        # print(f"volume is {volume}")
+        print(f"volume is {volume}")
         return volume
 
     def volume_deriv(self, parameters):
@@ -170,7 +171,7 @@ class Optimizer:
 
     def optimize(self):
         n_design_vars = self.para_spline.cps.size
-        initial_guess = np.ones((n_design_vars, 1)) * 0.145
+        initial_guess = np.ones((n_design_vars, 1)) * 0.1
 
         optim = scipy.optimize.minimize(
             self.evaluate_iteration,
@@ -204,7 +205,7 @@ def main():
     # Geometry definition
     length = 2
     height = 1
-    tiling = [4, 2]
+    tiling = [12, 6]
 
     def identifier_function_neumann(x):
         return x[:, 0] >= (tiling[0] - 1) / tiling[0] * length - 1e-12
@@ -215,6 +216,8 @@ def main():
         knot_vectors=[[0, 0, 1, 1], [0, 0, 1, 1]],
         control_points=np.ones((4, 1)) * 0.1,
     )
+    parameter_spline.insert_knots(0, [0.2, 0.4, 0.6, 0.8])
+    parameter_spline.insert_knots(1, [0.25, 0.5, 0.75])
     optimizer = Optimizer(
         microtile=sp.microstructure.tiles.DoubleLattice(),
         macro_spline=macro_spline,
@@ -223,6 +226,7 @@ def main():
         tiling=tiling,
         scaling_factor_objective_function=100,
         n_refinements=1,
+        n_threads=4
     )
     # Try some parameters
     optimizer.optimize()

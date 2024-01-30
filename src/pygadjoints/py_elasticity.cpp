@@ -15,6 +15,9 @@ void add_adjoint_class(py::module_ &m) {
       .def("set_material_constants",
            &pygadjoints::LinearElasticityProblem::SetMaterialConstants,
            py::arg("lame_lambda"), py::arg("lame_mu"), py::arg("mu"))
+      .def("set_objective_function",
+           &pygadjoints::LinearElasticityProblem::SetObjectiveFunction,
+           py::arg("objective_function"))
 
       // IO routines
       .def("read_control_point_sensitivities",
