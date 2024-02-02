@@ -353,7 +353,6 @@ class LinearElasticityProblem {
     } else {
       assert((objective_function_ == ObjectiveFunction::displacement_norm));
 
-      const Timer timer("SolveAdjointProblem");
       // Auxiliary references
       const geometryMap &geometric_mapping = *geometry_expression_ptr;
       const space &basis_function = *basis_function_ptr;
