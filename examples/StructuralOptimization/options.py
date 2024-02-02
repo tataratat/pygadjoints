@@ -12,7 +12,7 @@ gismo_options = [
             {
                 "tag": "c",
                 "attributes": {"index": "1"},
-                "text": "0",
+                "text": "-1",
             },
         ],
     },
@@ -83,7 +83,7 @@ gismo_options = [
                     "type": "Neumann",
                     "function": "2",
                     "unknown": "0",
-                    "name": "BID6",
+                    "name": "BID3",
                 },
             },
         ],

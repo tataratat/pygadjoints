@@ -17,6 +17,9 @@ class Optimizer:
         tiling=[24, 12],
         scaling_factor_objective_function=100,
         n_refinements=1,
+        write_logfiles=False,
+        max_volume=1.5,
+        objective_function_type=1,
     ):
         self.n_refinements = n_refinements
         self.microtile = microtile
@@ -30,8 +33,11 @@ class Optimizer:
         )
         self.linear_solver = pygadjoints.LinearElasticityProblem()
         self.linear_solver.set_number_of_threads(n_threads)
-        self.linear_solver.set_objective_function(1)
+        self.linear_solver.set_objective_function(objective_function_type)
         self.last_parameters = None
+        self.iteration = 0
+        self.write_logfiles = write_logfiles
+        self.max_volume = max_volume
 
     def prepare_microstructure(self):
         def parametrization_function(x):
@@ -106,7 +112,7 @@ class Optimizer:
             self.last_parameters, parameters
         ):
             return
-
+        self.iteration += 1
         # Something differs (or first iteration)
         self.para_spline.cps[:] = parameters.reshape(-1, 1)
         self.prepare_microstructure()
@@ -138,6 +144,21 @@ class Optimizer:
             self.linear_solver.objective_function()
             * self.scaling_factor_objective_function
         )
+
+        # Write into logfile
+        with open("log_file_iterations.csv", "a") as file1:
+            file1.write(
+                ", ".join(
+                    str(a)
+                    for a in (
+                        [self.iteration]
+                        + [self.current_objective_function_value]
+                        + parameters.tolist()
+                    )
+                )
+                + "\n"
+            )
+
         return self.current_objective_function_value
 
     def evaluate_jacobian(self, parameters):
@@ -150,17 +171,55 @@ class Optimizer:
             self.linear_solver.objective_function_deris_wrt_ctps()
             * self.scaling_factor_objective_function
         )
+
+        # Write into logfile
+        with open("log_file_sensitivities.csv", "a") as file1:
+            file1.write(
+                ", ".join(
+                    str(a)
+                    for a in (
+                        [self.iteration]
+                        + ctps_sensitivities.tolist()
+                        + parameters.tolist()
+                    )
+                )
+                + "\n"
+            )
         return ctps_sensitivities
 
     def volume(self, parameters):
         self.ensure_parameters(parameters)
-        volume = 1.5 - self.linear_solver.volume()
-        print(f"volume is {volume}")
-        return volume
+        volume = self.linear_solver.volume()
+
+        # Write into logfile
+        with open("log_file_volume.csv", "a") as file1:
+            file1.write(
+                ", ".join(
+                    str(a)
+                    for a in (
+                        [self.iteration] + [volume] + parameters.tolist()
+                    )
+                )
+                + "\n"
+            )
+
+        return self.max_volume - volume
 
     def volume_deriv(self, parameters):
         self.ensure_parameters(parameters)
         sensi = -self.linear_solver.volume_deris_wrt_ctps()
+
+        # Write into logfile
+        with open("log_file_volume_sensitivities.csv", "a") as file1:
+            file1.write(
+                ", ".join(
+                    str(a)
+                    for a in (
+                        [self.iteration] + [-sensi] + parameters.tolist()
+                    )
+                )
+                + "\n"
+            )
         return sensi
 
     def constraint(self):
@@ -204,30 +263,80 @@ def main():
 
     # Geometry definition
     length = 2
-    height = 1
-    tiling = [12, 6]
+    tiles_with_force_loading = 4
+    tiling = [24, 12]
+    parameter_spline_degrees = [2, 2]
+    parameter_spline_cps_dimensions = [12, 6]
+    parameter_default_value = 0.1
+
+    scaling_factor_objective_function = 1e-2
+
+    write_logfiles = True
+
+    # Create parameters spline
+    parameter_spline = sp.BSpline(
+        degrees=parameter_spline_degrees,
+        knot_vectors=[
+            (
+                [0] * parameter_spline_degrees[0]
+                + np.linspace(
+                    0,
+                    1,
+                    parameter_spline_cps_dimensions[0]
+                    - parameter_spline_degrees[0]
+                    + 1,
+                ).tolist()
+                + [1] * parameter_spline_degrees[0]
+            ),
+            (
+                [0] * parameter_spline_degrees[1]
+                + np.linspace(
+                    0,
+                    1,
+                    parameter_spline_cps_dimensions[1]
+                    - parameter_spline_degrees[1]
+                    + 1,
+                ).tolist()
+                + [1] * parameter_spline_degrees[1]
+            ),
+        ],
+        control_points=np.ones((np.prod(parameter_spline_cps_dimensions), 1))
+        * parameter_default_value,
+    )
+
+    # Function for neumann boundary
 
     def identifier_function_neumann(x):
-        return x[:, 0] >= (tiling[0] - 1) / tiling[0] * length - 1e-12
+        return (
+            x[:, 0]
+            >= (tiling[0] - tiles_with_force_loading) / tiling[0] * length
+            - 1e-12
+        )
 
-    macro_spline = sp.helpme.create.box(length, height)
-    parameter_spline = sp.BSpline(
-        degrees=[1, 1],
-        knot_vectors=[[0, 0, 1, 1], [0, 0, 1, 1]],
-        control_points=np.ones((4, 1)) * 0.1,
+    macro_spline = sp.Bezier(
+        degrees=[2, 1],
+        control_points=[
+            [0.0, 0.0],
+            [1.0, 0.5],
+            [2.0, 0.5],
+            [0.0, 2.0],
+            [1.0, 1.5],
+            [2.0, 1.5],
+        ],
     )
-    parameter_spline.insert_knots(0, [0.2, 0.4, 0.6, 0.8])
-    parameter_spline.insert_knots(1, [0.25, 0.5, 0.75])
     optimizer = Optimizer(
         microtile=sp.microstructure.tiles.DoubleLattice(),
         macro_spline=macro_spline,
         para_spline=parameter_spline,
         identifier_function_neumann=identifier_function_neumann,
         tiling=tiling,
-        scaling_factor_objective_function=100,
+        scaling_factor_objective_function=scaling_factor_objective_function,
         n_refinements=1,
-        n_threads=4
+        n_threads=4,
+        write_logfiles=write_logfiles,
+        max_volume=1.5,
     )
+
     # Try some parameters
     optimizer.optimize()
     optimizer.finalize()
