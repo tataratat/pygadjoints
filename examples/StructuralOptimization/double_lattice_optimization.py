@@ -21,7 +21,7 @@ class Optimizer:
         max_volume=1.5,
         objective_function_type=1,
         macro_ctps=None,
-        parameter_default_value=0.1
+        parameter_default_value=0.1,
     ):
         self.parameter_default_value = parameter_default_value
         self.n_refinements = n_refinements
@@ -131,7 +131,7 @@ class Optimizer:
             : self.para_spline.cps.shape[0]
         ].reshape(-1, 1)
         self.macro_spline.cps.ravel()[self.macro_ctps] = (
-            parameters[self.para_spline.cps.shape[0]:]
+            parameters[self.para_spline.cps.shape[0] :]
             + self.macro_spline_original.cps.ravel()[self.macro_ctps]
         )
         self.prepare_microstructure()
@@ -336,7 +336,9 @@ def main():
 
     # Function for neumann boundary
     def identifier_function_neumann(x):
-        return x[:, 0] >= (tiling[0] - tiles_with_load) / tiling[0] * 2. - 1e-12
+        return (
+            x[:, 0] >= (tiling[0] - tiles_with_load) / tiling[0] * 2.0 - 1e-12
+        )
 
     macro_spline = sp.Bezier(
         degrees=[1, 1],

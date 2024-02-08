@@ -54,8 +54,8 @@ class LinearElasticityProblem {
   typedef gsExprAssembler<>::space space;
   typedef gsExprAssembler<>::solution solution;
 
-  // using SolverType = gsSparseSolver<>::CGDiagonal;
-  using SolverType = gsSparseSolver<>::BiCGSTABILUT;
+  using SolverType = gsSparseSolver<>::CGDiagonal;
+  // using SolverType = gsSparseSolver<>::BiCGSTABILUT;
 
 public:
   LinearElasticityProblem() : expr_assembler_pde(1, 1) {
@@ -73,11 +73,9 @@ public:
    * @param mu second lame constant
    * @param rho density
    */
-  void SetMaterialConstants(const real_t &lambda, const real_t &mu,
-                            const real_t &rho) {
+  void SetMaterialConstants(const real_t &lambda, const real_t &mu) {
     lame_lambda_ = lambda;
     lame_mu_ = mu;
-    rho_ = rho;
   }
 
   /**
@@ -249,7 +247,7 @@ public:
     auto bilin_mu_2 = lame_mu_ * (phys_jacobian % phys_jacobian.tr()) *
                       meas(geometric_mapping);
     auto bilin_combined = (bilin_lambda + bilin_mu_1 + bilin_mu_2);
-
+    std::cout << bilin_combined << std::endl;
     // Assemble
     expr_assembler_pde.assemble(bilin_combined);
 
@@ -258,7 +256,7 @@ public:
       auto source_expression =
           expr_assembler_pde.getCoeff(source_function, geometric_mapping);
       auto lin_form =
-          rho_ * basis_function * source_expression * meas(geometric_mapping);
+          basis_function * source_expression * meas(geometric_mapping);
       expr_assembler_pde.assemble(lin_form);
     }
 
@@ -326,7 +324,7 @@ public:
       real_t obj_value = expr_evaluator.integralBdrBc(
           boundary_conditions.get("Neumann"),
           (solution_expression.tr() * (solution_expression)) *
-              nv(*geometry_expression_ptr).norm());
+              nv(geometric_mapping).norm());
 
       return obj_value;
     }
@@ -494,7 +492,7 @@ public:
     if (has_source_id) {
       // Linear Form Part
       auto LF_1_dx =
-          -rho_ * basis_function *
+          -basis_function *
           expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
           meas_expr_dx;
 
@@ -509,7 +507,7 @@ public:
         (has_source_id)) {
       // Derivative of the objective function with respect to the control points
       expr_assembler_pde.assemble(
-          (rho_ * solution_expression.cwisetr() *
+          (solution_expression.cwisetr() *
            expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
            meas_expr_dx)
               .tr());
@@ -628,8 +626,6 @@ private:
   real_t lame_lambda_{2000000};
   /// Second Lame constant
   real_t lame_mu_{500000};
-  /// Density
-  real_t rho_{1000};
 
   // -------------------------
   /// Expression assembler related to the forward problem
