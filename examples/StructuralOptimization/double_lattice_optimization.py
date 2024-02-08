@@ -20,11 +20,15 @@ class Optimizer:
         write_logfiles=False,
         max_volume=1.5,
         objective_function_type=1,
+        macro_ctps=None,
+        parameter_default_value=0.1
     ):
+        self.parameter_default_value = parameter_default_value
         self.n_refinements = n_refinements
         self.microtile = microtile
         self.interfaces = None
         self.macro_spline = macro_spline.bspline
+        self.macro_spline_original = self.macro_spline.copy()
         self.para_spline = para_spline.bspline
         self.identifier_function_neumann = identifier_function_neumann
         self.tiling = tiling
@@ -38,6 +42,7 @@ class Optimizer:
         self.iteration = 0
         self.write_logfiles = write_logfiles
         self.max_volume = max_volume
+        self.macro_ctps = macro_ctps
 
     def prepare_microstructure(self):
         def parametrization_function(x):
@@ -83,7 +88,9 @@ class Optimizer:
 
             return identifier_function
 
-        multipatch = generator.create(contact_length=0.5)
+        multipatch = generator.create(
+            contact_length=0.5, macro_sensitivities=True
+        )
 
         # Reuse existing interfaces
         if self.interfaces is None:
@@ -104,6 +111,12 @@ class Optimizer:
             options=gismo_options,
             export_fields=True,
             as_base64=True,
+            field_mask=(
+                np.arange(0, self.para_spline.cps.shape[0]).tolist()
+                + (
+                    np.array(self.macro_ctps) + self.para_spline.cps.shape[0]
+                ).tolist()
+            ),
         )
 
     def ensure_parameters(self, parameters):
@@ -114,11 +127,20 @@ class Optimizer:
             return
         self.iteration += 1
         # Something differs (or first iteration)
-        self.para_spline.cps[:] = parameters.reshape(-1, 1)
+        self.para_spline.cps[:] = parameters[
+            : self.para_spline.cps.shape[0]
+        ].reshape(-1, 1)
+        self.macro_spline.cps.ravel()[self.macro_ctps] = (
+            parameters[self.para_spline.cps.shape[0]:]
+            + self.macro_spline_original.cps.ravel()[self.macro_ctps]
+        )
         self.prepare_microstructure()
         if self.last_parameters is None:
             # First iteration
             self.linear_solver.init(self.get_filename(), self.n_refinements)
+            self.linear_solver.read_control_point_sensitivities(
+                self.get_filename() + ".fields.xml"
+            )
             self.last_parameters = parameters.copy()
         else:
             self.linear_solver.update_geometry(
@@ -229,15 +251,24 @@ class Optimizer:
         self.linear_solver.export_paraview("solution", False, 100, True)
 
     def optimize(self):
-        n_design_vars = self.para_spline.cps.size
-        initial_guess = np.ones((n_design_vars, 1)) * 0.1
+        # Initialize the optimization
+        n_design_vars_para = self.para_spline.cps.size
+        n_design_vars_macro = len(self.macro_ctps)
+        initial_guess = np.empty(n_design_vars_macro + n_design_vars_para)
+        initial_guess[:n_design_vars_para] = (
+            np.ones(n_design_vars_para) * self.parameter_default_value
+        )
+        initial_guess[n_design_vars_para:] = 0
 
         optim = scipy.optimize.minimize(
             self.evaluate_iteration,
             initial_guess.ravel(),
             method="SLSQP",
             jac=self.evaluate_jacobian,
-            bounds=[(0.0111, 0.249) for _ in range(n_design_vars)],
+            bounds=(
+                [(0.0111, 0.249) for _ in range(n_design_vars_para)]
+                + [(-0.5, 0.5) for _ in range(n_design_vars_macro)]
+            ),
             constraints=self.constraint(),
             options={"disp": True},
         )
@@ -262,12 +293,11 @@ def main():
     # pygdjoints)
 
     # Geometry definition
-    length = 2
-    tiles_with_force_loading = 4
+    tiles_with_load = 2
     tiling = [24, 12]
-    parameter_spline_degrees = [2, 2]
+    parameter_spline_degrees = [1, 1]
     parameter_spline_cps_dimensions = [12, 6]
-    parameter_default_value = 0.1
+    parameter_default_value = 0.125
 
     scaling_factor_objective_function = 1e-2
 
@@ -305,25 +335,20 @@ def main():
     )
 
     # Function for neumann boundary
-
     def identifier_function_neumann(x):
-        return (
-            x[:, 0]
-            >= (tiling[0] - tiles_with_force_loading) / tiling[0] * length
-            - 1e-12
-        )
+        return x[:, 0] >= (tiling[0] - tiles_with_load) / tiling[0] * 2. - 1e-12
 
     macro_spline = sp.Bezier(
-        degrees=[2, 1],
+        degrees=[1, 1],
         control_points=[
             [0.0, 0.0],
-            [1.0, 0.5],
-            [2.0, 0.5],
-            [0.0, 2.0],
-            [1.0, 1.5],
-            [2.0, 1.5],
+            [2.0, 0.0],
+            [0.0, 1.0],
+            [2.0, 1.0],
         ],
     )
+    print(f"Max Volume is:{macro_spline.integrate.volume()}")
+
     optimizer = Optimizer(
         microtile=sp.microstructure.tiles.DoubleLattice(),
         macro_spline=macro_spline,
@@ -335,6 +360,8 @@ def main():
         n_threads=4,
         write_logfiles=write_logfiles,
         max_volume=1.5,
+        macro_ctps=[],
+        parameter_default_value=parameter_default_value,
     )
 
     # Try some parameters

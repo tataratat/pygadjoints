@@ -154,17 +154,27 @@ public:
     // IDs in the text file (might change later)
     const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{3};
 
+    has_source_id = false;
+
     // Import mesh and load relevant information
     gsFileData<> fd(filename);
     fd.getId(mp_id, mp_pde);
-    fd.getId(source_id, source_function);
+    // Check if file has source functions
+    if (fd.hasId(source_id)) {
+      fd.getId(source_id, source_function);
+      has_source_id = true;
+    }
     fd.getId(bc_id, boundary_conditions);
     boundary_conditions.setGeoMap(mp_pde);
-    gsOptionList Aopt;
-    fd.getId(ass_opt_id, Aopt);
 
-    // Set Options in expression assembler
-    expr_assembler_pde.setOptions(Aopt);
+    // Check if Compiler options have been set
+    if (fd.hasId(ass_opt_id)) {
+      gsOptionList Aopt;
+      fd.getId(ass_opt_id, Aopt);
+
+      // Set Options in expression assembler
+      expr_assembler_pde.setOptions(Aopt);
+    }
   }
 
   void Init(const std::string &filename, const int numRefine) {
@@ -214,8 +224,8 @@ public:
     // Initialize the system
     expr_assembler_pde.initSystem();
 
-    // Precalculate sensitity matrix
-    GetParameterSensitivities(filename + ".fields.xml");
+    // // Precalculate sensitity matrix
+    // GetParameterSensitivities(filename + ".fields.xml");
   }
 
   void Assemble() {
@@ -238,18 +248,19 @@ public:
                       meas(geometric_mapping);
     auto bilin_mu_2 = lame_mu_ * (phys_jacobian % phys_jacobian.tr()) *
                       meas(geometric_mapping);
-
-    // Add volumetric forces to the system
-    auto source_expression =
-        expr_assembler_pde.getCoeff(source_function, geometric_mapping);
-    auto lin_form =
-        rho_ * basis_function * source_expression * meas(geometric_mapping);
-
     auto bilin_combined = (bilin_lambda + bilin_mu_1 + bilin_mu_2);
 
     // Assemble
     expr_assembler_pde.assemble(bilin_combined);
-    expr_assembler_pde.assemble(lin_form);
+
+    // Add volumetric forces to the system and assemble
+    if (has_source_id) {
+      auto source_expression =
+          expr_assembler_pde.getCoeff(source_function, geometric_mapping);
+      auto lin_form =
+          rho_ * basis_function * source_expression * meas(geometric_mapping);
+      expr_assembler_pde.assemble(lin_form);
+    }
 
     // Compute the Neumann terms defined on physical space
     auto g_N = expr_assembler_pde.getBdrFunction(geometric_mapping);
@@ -473,22 +484,29 @@ public:
         lame_mu_ * frobenius(BL_mu2_2_dx, BL_mu2_1) * meas_expr; // validated
     auto BL_mu2_dx2 = lame_mu_ * frobenius(BL_mu2_2, BL_mu2_1).cwisetr() *
                       meas_expr_dx; // validated
-    // Linear Form Part
-    auto LF_1_dx =
-        -rho_ * basis_function *
-        expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
-        meas_expr_dx;
 
     // Assemble
     expr_assembler_pde.assemble(BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 +
                                     BL_mu2_dx0 + BL_mu2_dx2,
-                                BL_mu1_dx1, BL_mu2_dx1, LF_1_dx);
+                                BL_mu1_dx1, BL_mu2_dx1);
+
+    // Same for source term
+    if (has_source_id) {
+      // Linear Form Part
+      auto LF_1_dx =
+          -rho_ * basis_function *
+          expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
+          meas_expr_dx;
+
+      expr_assembler_pde.assemble(LF_1_dx);
+    }
 
     ///////////////////////////
     // Compute sensitivities //
     ///////////////////////////
 
-    if (objective_function_ == ObjectiveFunction::compliance) {
+    if ((objective_function_ == ObjectiveFunction::compliance) &&
+        (has_source_id)) {
       // Derivative of the objective function with respect to the control points
       expr_assembler_pde.assemble(
           (rho_ * solution_expression.cwisetr() *
@@ -638,8 +656,11 @@ private:
   /// Boundary conditions pointer
   gsBoundaryConditions<> boundary_conditions;
 
-  /// Neumann function
+  /// Source function
   gsFunctionExpr<> source_function{};
+
+  // Flag for source function
+  bool has_source_id{false};
 
   /// Function basis
   gsMultiBasis<> function_basis{};
