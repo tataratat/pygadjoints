@@ -209,6 +209,7 @@ public:
     geometry_expression_ptr =
         std::make_shared<geometryMap>(expr_assembler_pde.getMap(mp_pde));
 
+    std::cout << "TEST1 " << std::endl;
     basis_function_ptr->setup(boundary_conditions, dirichlet::l2Projection, 0);
 
     // Assign a Dof Mapper
@@ -218,9 +219,11 @@ public:
     // Evaluator
     expr_evaluator_ptr = std::make_shared<gsExprEvaluator<>>(
         gsExprEvaluator<>(expr_assembler_pde));
+    std::cout << "TEST 2" << std::endl;
 
     // Initialize the system
     expr_assembler_pde.initSystem();
+    std::cout << "TEST 3" << std::endl;
 
     // // Precalculate sensitity matrix
     // GetParameterSensitivities(filename + ".fields.xml");

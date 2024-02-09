@@ -69,14 +69,14 @@ boundary_conditions_options = [
     },
 ]
 
-for i_surface in range(1, 7):
+for i_surface in range(1, 2):
     boundary_conditions_options[1]["children"].append(
         {
             "tag": "bc",
             "attributes": {
                 "type": "Dirichlet",
                 "function": str(0),
-                "unknown": str(2),
+                "unknown": str(0),
                 "name": f"BID{i_surface}",
             },
         }
@@ -84,19 +84,21 @@ for i_surface in range(1, 7):
 
 # Create a simple geometry
 n_refine = 4
-microtile_patches = spp.helpme.create.box(1, 1, 1).bspline
+microtile_patches = spp.helpme.create.box(5, 3, 0.9).bspline
 microtile_patches.elevate_degrees([0, 1, 2, 0, 1, 2])
-microtile_patches.insert_knots(0, np.linspace(0, 1, n_refine))
-microtile_patches.insert_knots(1, np.linspace(0, 1, n_refine))
-microtile_patches.insert_knots(2, np.linspace(0, 1, n_refine))
-microtile = spp.Multipatch(microtile_patches.extract.beziers())
+microtile_patches.insert_knots(0, np.linspace(0, 1, n_refine + 2))
+microtile_patches.insert_knots(1, np.linspace(0, 1, n_refine + 2))
+microtile_patches.insert_knots(2, np.linspace(0, 1, n_refine + 2))
+microtile_patches.show(control_points=False)
+microtile = spp.Multipatch([microtile_patches])
 microtile.determine_interfaces()
-microtile.boundaries_from_continuity()
+# microtile.boundaries_from_continuity()
 spp.io.gismo.export(
     "mini_example.xml",
     microtile,
     options=boundary_conditions_options,
     as_base64=True,
+    labeled_boundaries=True,
 )
 print("Test 1")
 
@@ -105,5 +107,5 @@ linear_elasticity_solver.init("mini_example.xml", 0)
 linear_elasticity_solver.set_material_constants(lambda_, mu_)
 linear_elasticity_solver.assemble()
 linear_elasticity_solver.solve_linear_system()
-linear_elasticity_solver.export_paraview("solution", False, 8000, False)
+linear_elasticity_solver.export_paraview("solution", False, 8000, True)
 linear_elasticity_solver.export_xml("solution_2")
