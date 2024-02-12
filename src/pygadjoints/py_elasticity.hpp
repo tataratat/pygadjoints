@@ -9,35 +9,13 @@
 #endif
 
 #include "pygadjoints/custom_expression.hpp"
+#include "pygadjoints/timer.hpp"
 
 namespace pygadjoints {
 
 using namespace gismo;
 
 namespace py = pybind11;
-
-class Timer {
-#if 1
-public:
-  const std::string name;
-  const std::chrono::time_point<std::chrono::high_resolution_clock>
-      starting_time;
-  Timer(const std::string &function_name)
-      : name(function_name),
-        starting_time{std::chrono::high_resolution_clock::now()} {
-    std::cout << "[Timer] : " << std::setw(40) << name << "\tstarted..."
-              << std::endl;
-  }
-
-  ~Timer() {
-    std::cout << "[Timer] : " << std::setw(40) << name << "\tElapsed time : "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(
-                     std::chrono::high_resolution_clock::now() - starting_time)
-                     .count()
-              << "ms" << std::endl;
-  }
-#endif
-};
 
 enum class ObjectiveFunction : int {
   // Use compliance defined as F^{T} u
@@ -143,14 +121,13 @@ public:
   void SetNumberOfThreads(const int &n_threads) {
     n_omp_threads = n_threads;
     omp_set_num_threads(n_threads);
-    // gsInfo << "Available threads: " << omp_get_max_threads() << "\n";
   }
 #endif
 
   void ReadInputFromFile(const std::string &filename) {
     const Timer timer("ReadInputFromFile");
     // IDs in the text file (might change later)
-    const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{3};
+    const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{4};
 
     has_source_id = false;
 
@@ -209,7 +186,6 @@ public:
     geometry_expression_ptr =
         std::make_shared<geometryMap>(expr_assembler_pde.getMap(mp_pde));
 
-    std::cout << "TEST1 " << std::endl;
     basis_function_ptr->setup(boundary_conditions, dirichlet::l2Projection, 0);
 
     // Assign a Dof Mapper
@@ -219,14 +195,9 @@ public:
     // Evaluator
     expr_evaluator_ptr = std::make_shared<gsExprEvaluator<>>(
         gsExprEvaluator<>(expr_assembler_pde));
-    std::cout << "TEST 2" << std::endl;
 
     // Initialize the system
     expr_assembler_pde.initSystem();
-    std::cout << "TEST 3" << std::endl;
-
-    // // Precalculate sensitity matrix
-    // GetParameterSensitivities(filename + ".fields.xml");
   }
 
   void Assemble() {
@@ -508,7 +479,8 @@ public:
 
     if ((objective_function_ == ObjectiveFunction::compliance) &&
         (has_source_id)) {
-      // Derivative of the objective function with respect to the control points
+      // Partial derivative of the objective function with respect to the
+      // control points
       expr_assembler_pde.assemble(
           (solution_expression.cwisetr() *
            expr_assembler_pde.getCoeff(source_function, geometric_mapping) *
@@ -516,11 +488,10 @@ public:
               .tr());
     }
     // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled
-    const auto sensitivities = // 0.71469205
-        (expr_assembler_pde.rhs().transpose() +
-         (lagrange_multipliers_ptr->transpose() *
-          expr_assembler_pde.matrix())) *
-        (*ctps_sensitivities_matrix_ptr);
+    const auto sensitivities = (expr_assembler_pde.rhs().transpose() +
+                                (lagrange_multipliers_ptr->transpose() *
+                                 expr_assembler_pde.matrix())) *
+                               (*ctps_sensitivities_matrix_ptr);
 
     // Write eigen matrix into a py::array
     py::array_t<double> sensitivities_py(sensitivities.size());

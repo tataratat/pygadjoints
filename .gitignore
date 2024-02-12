@@ -20,3 +20,9 @@ docs/source/_generated
 **/CMakeFiles/
 **/Makefile
 **/cmake_install.cmake
+
+# Solution and input files
+**/*.xml
+**/ParaviewOutput
+**/*.csv
+**/results
