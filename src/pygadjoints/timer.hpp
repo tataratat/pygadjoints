@@ -9,7 +9,7 @@ namespace pygadjoints {
 
 class Timer {
 #if 1
- public:
+public:
   const std::string name;
   const std::chrono::time_point<std::chrono::high_resolution_clock>
       starting_time;
@@ -29,4 +29,4 @@ class Timer {
   }
 #endif
 };
-}  // namespace pygadjoints
+} // namespace pygadjoints

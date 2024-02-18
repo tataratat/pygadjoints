@@ -1,5 +1,6 @@
 import splinepy as sp
 from options import gismo_options
+
 import pygadjoints
 
 geometry = sp.BSpline(
@@ -19,11 +20,11 @@ geometry = sp.BSpline(
 )
 
 
-
 def main():
     # Set the number of available threads (will be passed to splinepy and
     # pygdjoints)
-    sp.io.gismo.export(fname="poisson",
+    sp.io.gismo.export(
+        fname="poisson",
         multipatch=geometry,
         options=gismo_options,
         export_fields=True,
@@ -31,7 +32,7 @@ def main():
     )
     n_threads = 12
 
-    linear_solver = pygadjoints.PoissonProblem()
+    linear_solver = pygadjoints.DiffusionProblem()
     linear_solver.set_number_of_threads(n_threads)
     linear_solver.assemble()
     linear_solver.solve_linear_system()

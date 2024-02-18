@@ -88,6 +88,17 @@ public:
     collection.options().setInt("numPoints", sample_rate);
     collection.newTimeStep(&mp_pde);
     collection.addField(*solution_expression_ptr, "displacement");
+    if (has_solution) {
+      auto solution_given = expr_assembler_pde.getCoeff(
+          analytical_solution, *geometry_expression_ptr);
+      collection.addField(solution_given, "solution");
+      collection.addField(*solution_expression_ptr - solution_given, "error");
+      std::cout << "Error in L2 norm : "
+                << expr_evaluator_ptr->integral(
+                       (*solution_expression_ptr - solution_given) *
+                       (*solution_expression_ptr - solution_given))
+                << std::endl;
+    }
     collection.saveTimeStep();
     collection.save();
   }
@@ -127,16 +138,24 @@ public:
   void ReadInputFromFile(const std::string &filename) {
     const Timer timer("ReadInputFromFile");
     // IDs in the text file (might change later)
-    const int mp_id{0}, source_id{1}, bc_id{2}, ass_opt_id{4};
+    const int mp_id{0}, source_id{1}, bc_id{2}, solution_id{3}, ass_opt_id{4};
 
     has_source_id = false;
+    has_solution = false;
 
     // Import mesh and load relevant information
     gsFileData<> fd(filename);
     fd.getId(mp_id, mp_pde);
+
     // Check if file has source functions
     if (fd.hasId(source_id)) {
       fd.getId(source_id, source_function);
+      has_solution = true;
+    }
+
+    // Check if file has source functions
+    if (fd.hasId(solution_id)) {
+      fd.getId(solution_id, analytical_solution);
       has_source_id = true;
     }
     fd.getId(bc_id, boundary_conditions);
@@ -628,6 +647,12 @@ private:
 
   /// Source function
   gsFunctionExpr<> source_function{};
+
+  /// Solution function
+  gsFunctionExpr<> analytical_solution{};
+
+  /// Solution function flag
+  bool has_solution{false};
 
   // Flag for source function
   bool has_source_id{false};
