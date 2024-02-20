@@ -154,13 +154,23 @@ class LinearElasticityProblem {
     }
 
     // Check if file has source functions
-    std::cout << "Checking solution ID " << std::endl;
     if (fd.hasId(solution_id)) {
-      std::cout << "Returned true : " << fd.hasId(solution_id) << std::endl;
       fd.getId(solution_id, analytical_solution);
       has_source_id = true;
     }
     fd.getId(bc_id, boundary_conditions);
+
+    // This block prints out all boundary conditions (patch boundary wise)
+    // for (auto a = boundary_conditions.beginAll();
+    //      a != boundary_conditions.endAll(); a++) {
+    //   std::cout << "First condition : " << a->first << std::endl;
+    //   for (const auto &element : a->second) {
+    //     std::cout << element.ctype() << "\t [" << element.patch() << ", "
+    //               << element.side() << "]"
+    //               << "\t Function : " << *element.function() << std::endl;
+    //   }
+    // }
+
     boundary_conditions.setGeoMap(mp_pde);
 
     // Check if Compiler options have been set
@@ -171,7 +181,6 @@ class LinearElasticityProblem {
       // Set Options in expression assembler
       expr_assembler_pde.setOptions(Aopt);
     }
-    std::cout << "Options set " << std::endl;
   }
 
   void Init(const std::string &filename, const int number_of_refinements,
@@ -180,19 +189,15 @@ class LinearElasticityProblem {
     const Timer timer("Initialisation");
     // Read input parameters
     ReadInputFromFile(filename);
-    std::cout << "Back b*** " << std::endl;
 
     // Set number of refinements
     n_refinements = number_of_refinements;
 
     //! [Refinement]
-    std::cout << "0 " << std::flush;
     function_basis = gsMultiBasis<>(mp_pde, true);
-    std::cout << "1 " << std::flush;
 
     // p-refine
     function_basis.degreeElevate(number_degree_elevations);
-    std::cout << "2 " << std::flush;
 
     // h-refine each basis
     for (int r = 0; r < n_refinements; ++r) {
@@ -201,7 +206,6 @@ class LinearElasticityProblem {
 
     // Elements used for numerical integration
     expr_assembler_pde.setIntegrationElements(function_basis);
-    std::cout << "3 " << std::flush;
 
     // Set the dimension
     dimensionality_ = mp_pde.geoDim();
@@ -213,7 +217,6 @@ class LinearElasticityProblem {
     // Solution vector and solution variable
     solution_expression_ptr = std::make_shared<solution>(
         expr_assembler_pde.getSolution(*basis_function_ptr, solVector));
-    std::cout << "4 " << std::flush;
 
     // Retrieve expression that represents the geometry mapping
     geometry_expression_ptr =

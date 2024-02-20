@@ -296,9 +296,9 @@ def main():
 
     # Geometry definition
     tiles_with_load = 2
-    tiling = [6, 3]
+    tiling = [8,4]
     parameter_spline_degrees = [1, 1]
-    parameter_spline_cps_dimensions = [3, 2]
+    parameter_spline_cps_dimensions = [6, 3]
     parameter_default_value = 0.125
 
     scaling_factor_objective_function = 1e-2

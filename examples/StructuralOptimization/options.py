@@ -46,7 +46,7 @@ gismo_options = [
                 "attributes": {
                     "type": "FunctionExpr",
                     "dim": "2",
-                    "index": "2",
+                    "index": "1",
                     "c": "2",
                 },
                 "children": [
@@ -75,7 +75,7 @@ gismo_options = [
                 "tag": "bc",
                 "attributes": {
                     "type": "Neumann",
-                    "function": "2",
+                    "function": "1",
                     "unknown": "0",
                     "name": "BID6",
                 },
@@ -84,7 +84,7 @@ gismo_options = [
     },
     {
         "tag": "OptionList",
-        "attributes": {"id": "4"},
+        "attributes": {"id": "44"},
         "text": "\n    ",
         "children": [
             {
