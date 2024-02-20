@@ -3,14 +3,13 @@ import splinepy as spp
 
 import pygadjoints as pyg
 
-
 """
 This example solves a thermal diffusion problem in the form
 
 .. math:
-  \lambda \Delta \theta + \bar{f} = 0
+  \\lambda \\Delta \theta + \bar{f} = 0
 
-We construct the manufactured solution with two variables in the form of 
+We construct the manufactured solution with two variables in the form of
 
 .. math:
   \theta = \alpha \text{sin} (2x) + \beta x y^2
@@ -18,7 +17,7 @@ We construct the manufactured solution with two variables in the form of
 which can be obtained, iff :math:`\bar{f}` is given as
 
 .. math:
-  \bar{f} = \lambda (4 \text{sin} (2x) + 2\beta x)
+  \bar{f} = \\lambda (4 \text{sin} (2x) + 2\beta x)
 
 """
 
@@ -35,8 +34,7 @@ boundary_conditions_options = [
         # F - function (source)
         "tag": "Function",
         "attributes": {"type": "FunctionExpr", "id": "1", "dim": "3"},
-        "text":
-        f"4 * sin(2 * x) * {alpha_} * {lambda_} -"
+        "text": f"4 * sin(2 * x) * {alpha_} * {lambda_} -"
         f" 2 * {beta_} * x * {lambda_}",
     },
     {
@@ -50,9 +48,7 @@ boundary_conditions_options = [
                     "dim": "3",
                     "index": "0",
                 },
-                "text":
-                f"sin(2 * x) * {alpha_} "
-                f" + {beta_} * x * y * y",
+                "text": f"sin(2 * x) * {alpha_} " f" + {beta_} * x * y * y",
             },
         ],
     },
@@ -63,9 +59,7 @@ boundary_conditions_options = [
             "dim": "3",
             "id": "3",
         },
-        "text":
-        f"sin(2 * x) * {alpha_} "
-        f"+ {beta_} * x * y * y",
+        "text": f"sin(2 * x) * {alpha_} " f"+ {beta_} * x * y * y",
     },
 ]
 
@@ -92,9 +86,9 @@ microtile_patches = spp.helpme.create.box(3, 4, 3.5).bspline
 for _ in range(n_elevate):
     microtile_patches.elevate_degrees([0, 1, 2])
 microtile_patches.cps += 1 * np.random.random(microtile_patches.cps.shape)
-microtile_patches.insert_knots(0, np.linspace(0, 1, n_refine ** 2))
-microtile_patches.insert_knots(1, np.linspace(0, 1, n_refine ** 2))
-microtile_patches.insert_knots(2, np.linspace(0, 1, n_refine ** 2))
+microtile_patches.insert_knots(0, np.linspace(0, 1, n_refine**2))
+microtile_patches.insert_knots(1, np.linspace(0, 1, n_refine**2))
+microtile_patches.insert_knots(2, np.linspace(0, 1, n_refine**2))
 # microtile_patches.show()
 microtile = spp.Multipatch([microtile_patches])
 microtile.determine_interfaces()
@@ -109,10 +103,10 @@ spp.io.gismo.export(
 print("Test 1")
 
 diffusion_solver = pyg.DiffusionProblem()
-diffusion_solver.init("mini_example.xml", 0, True)
+diffusion_solver.init("mini_example.xml", 0, 0, True)
 diffusion_solver.set_material_constants(lambda_)
 diffusion_solver.assemble()
 diffusion_solver.solve_linear_system()
 diffusion_solver.export_paraview("solution", False, 80**3, True)
 diffusion_solver.export_xml("solution_2")
-print("Export successfull")
+print("Export successful")

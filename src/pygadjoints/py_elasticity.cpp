@@ -11,7 +11,8 @@ void add_elasticity_problem(py::module_ &m) {
       .def(py::init<>())
       // Manipulating the problem and initialization
       .def("init", &pygadjoints::LinearElasticityProblem::Init,
-           py::arg("fname"), py::arg("refinements"))
+           py::arg("fname"), py::arg("refinements"),
+           py::arg("degree_elevations"), py::arg("print_summary") = false)
       .def("set_material_constants",
            &pygadjoints::LinearElasticityProblem::SetMaterialConstants,
            py::arg("lame_lambda"), py::arg("lame_mu"))

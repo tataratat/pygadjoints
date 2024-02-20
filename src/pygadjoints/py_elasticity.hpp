@@ -35,7 +35,7 @@ class LinearElasticityProblem {
   using SolverType = gsSparseSolver<>::CGDiagonal;
   // using SolverType = gsSparseSolver<>::BiCGSTABILUT;
 
-public:
+ public:
   LinearElasticityProblem() : expr_assembler_pde(1, 1) {
 #ifdef PYGADJOINTS_USE_OPENMP
     omp_set_num_threads(std::min(omp_get_max_threads(), n_omp_threads));
@@ -154,7 +154,9 @@ public:
     }
 
     // Check if file has source functions
+    std::cout << "Checking solution ID " << std::endl;
     if (fd.hasId(solution_id)) {
+      std::cout << "Returned true : " << fd.hasId(solution_id) << std::endl;
       fd.getId(solution_id, analytical_solution);
       has_source_id = true;
     }
@@ -169,18 +171,28 @@ public:
       // Set Options in expression assembler
       expr_assembler_pde.setOptions(Aopt);
     }
+    std::cout << "Options set " << std::endl;
   }
 
-  void Init(const std::string &filename, const int numRefine) {
-    const Timer timer("Init");
+  void Init(const std::string &filename, const int number_of_refinements,
+            const int number_degree_elevations,
+            const bool print_summary = false) {
+    const Timer timer("Initialisation");
     // Read input parameters
     ReadInputFromFile(filename);
+    std::cout << "Back b*** " << std::endl;
 
     // Set number of refinements
-    n_refinements = numRefine;
+    n_refinements = number_of_refinements;
 
     //! [Refinement]
+    std::cout << "0 " << std::flush;
     function_basis = gsMultiBasis<>(mp_pde, true);
+    std::cout << "1 " << std::flush;
+
+    // p-refine
+    function_basis.degreeElevate(number_degree_elevations);
+    std::cout << "2 " << std::flush;
 
     // h-refine each basis
     for (int r = 0; r < n_refinements; ++r) {
@@ -189,6 +201,7 @@ public:
 
     // Elements used for numerical integration
     expr_assembler_pde.setIntegrationElements(function_basis);
+    std::cout << "3 " << std::flush;
 
     // Set the dimension
     dimensionality_ = mp_pde.geoDim();
@@ -200,6 +213,7 @@ public:
     // Solution vector and solution variable
     solution_expression_ptr = std::make_shared<solution>(
         expr_assembler_pde.getSolution(*basis_function_ptr, solVector));
+    std::cout << "4 " << std::flush;
 
     // Retrieve expression that represents the geometry mapping
     geometry_expression_ptr =
@@ -217,6 +231,20 @@ public:
 
     // Initialize the system
     expr_assembler_pde.initSystem();
+    std::cout << "5 " << std::flush;
+
+    // Print summary:
+    if (print_summary) {
+      std::string padding{"        : "};
+      std::cout << padding << "Simulation summary:\n"
+                << padding << "--------------------\n"
+                << padding << "Number of DOFs :\t\t"
+                << expr_assembler_pde.numDofs() << "\n"
+                << padding << "Number of patches :\t\t" << mp_pde.nPatches()
+                << "\n"
+                << padding << "Minimum spline degree: \t"
+                << function_basis.minCwiseDegree() << std::endl;
+    }
   }
 
   void Assemble() {
@@ -257,9 +285,9 @@ public:
     auto g_N = expr_assembler_pde.getBdrFunction(geometric_mapping);
 
     // Neumann conditions
-    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
-                                   basis_function * g_N *
-                                       nv(geometric_mapping).norm());
+    expr_assembler_pde.assembleBdr(
+        boundary_conditions.get("Neumann"),
+        basis_function * g_N * nv(geometric_mapping).norm());
 
     system_matrix =
         std::make_shared<const gsSparseMatrix<>>(expr_assembler_pde.matrix());
@@ -328,12 +356,12 @@ public:
     // Compute the derivative of the volume of the domain with respect to
     // the control points Auxiliary expressions
     const space &basis_function = *basis_function_ptr;
-    auto jacobian = jac(*geometry_expression_ptr);      // validated
-    auto inv_jacs = jacobian.ginv();                    // validated
-    auto meas_expr = meas(*geometry_expression_ptr);    // validated
-    auto djacdc = jac(basis_function);                  // validated
-    auto aux_expr = (djacdc * inv_jacs).tr();           // validated
-    auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
+    auto jacobian = jac(*geometry_expression_ptr);       // validated
+    auto inv_jacs = jacobian.ginv();                     // validated
+    auto meas_expr = meas(*geometry_expression_ptr);     // validated
+    auto djacdc = jac(basis_function);                   // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();            // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
     expr_assembler_pde.assemble(meas_expr_dx.tr());
 
     const auto volume_deriv =
@@ -412,74 +440,74 @@ public:
     ////////////////////////////////
 
     // Auxiliary expressions
-    auto jacobian = jac(geometric_mapping);             // validated
-    auto inv_jacs = jacobian.ginv();                    // validated
-    auto meas_expr = meas(geometric_mapping);           // validated
-    auto djacdc = jac(basis_function);                  // validated
-    auto aux_expr = (djacdc * inv_jacs).tr();           // validated
-    auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
+    auto jacobian = jac(geometric_mapping);              // validated
+    auto inv_jacs = jacobian.ginv();                     // validated
+    auto meas_expr = meas(geometric_mapping);            // validated
+    auto djacdc = jac(basis_function);                   // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();            // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
 
     // Start to assemble the bilinear form with the known solution field
     // 1. Bilinear form of lambda expression separated into 3 individual
     // sections
     auto BL_lambda_1 =
-        idiv(solution_expression, geometric_mapping).val();     // validated
-    auto BL_lambda_2 = idiv(basis_function, geometric_mapping); // validated
+        idiv(solution_expression, geometric_mapping).val();      // validated
+    auto BL_lambda_2 = idiv(basis_function, geometric_mapping);  // validated
     auto BL_lambda =
-        lame_lambda_ * BL_lambda_2 * BL_lambda_1 * meas_expr; // validated
+        lame_lambda_ * BL_lambda_2 * BL_lambda_1 * meas_expr;  // validated
 
     // trace(A * B) = A:B^T
     auto BL_lambda_1_dx = frobenius(
-        aux_expr, ijac(solution_expression, geometric_mapping)); // validated
+        aux_expr, ijac(solution_expression, geometric_mapping));  // validated
     auto BL_lambda_2_dx =
-        (ijac(basis_function, geometric_mapping) % aux_expr); // validated
+        (ijac(basis_function, geometric_mapping) % aux_expr);  // validated
 
     auto BL_lambda_dx =
         lame_lambda_ * BL_lambda_2 * BL_lambda_1 * meas_expr_dx -
         lame_lambda_ * BL_lambda_2_dx * BL_lambda_1 * meas_expr -
-        lame_lambda_ * BL_lambda_2 * BL_lambda_1_dx * meas_expr; // validated
+        lame_lambda_ * BL_lambda_2 * BL_lambda_1_dx * meas_expr;  // validated
 
     // 2. Bilinear form of mu (first part)
     // BL_mu1_2 seems to be in a weird order with [jac0, jac2] leading
     // to [2x(2nctps)]
-    auto BL_mu1_1 = ijac(solution_expression, geometric_mapping); // validated
-    auto BL_mu1_2 = ijac(basis_function, geometric_mapping);      // validated
-    auto BL_mu1 = lame_mu_ * (BL_mu1_2 % BL_mu1_1) * meas_expr;   // validated
+    auto BL_mu1_1 = ijac(solution_expression, geometric_mapping);  // validated
+    auto BL_mu1_2 = ijac(basis_function, geometric_mapping);       // validated
+    auto BL_mu1 = lame_mu_ * (BL_mu1_2 % BL_mu1_1) * meas_expr;    // validated
 
     auto BL_mu1_1_dx = -(ijac(solution_expression, geometric_mapping) *
-                         aux_expr.cwisetr()); //          validated
+                         aux_expr.cwisetr());  //          validated
     auto BL_mu1_2_dx =
-        -(jac(basis_function) * inv_jacs * aux_expr.cwisetr()); // validated
+        -(jac(basis_function) * inv_jacs * aux_expr.cwisetr());  // validated
 
     auto BL_mu1_dx0 =
-        lame_mu_ * BL_mu1_2 % BL_mu1_1_dx * meas_expr; // validated
+        lame_mu_ * BL_mu1_2 % BL_mu1_1_dx * meas_expr;  // validated
     auto BL_mu1_dx1 =
-        lame_mu_ * frobenius(BL_mu1_2_dx, BL_mu1_1) * meas_expr; // validated
+        lame_mu_ * frobenius(BL_mu1_2_dx, BL_mu1_1) * meas_expr;  // validated
     auto BL_mu1_dx2 = lame_mu_ * frobenius(BL_mu1_2, BL_mu1_1).cwisetr() *
-                      meas_expr_dx; // validated
+                      meas_expr_dx;  // validated
 
     // 2. Bilinear form of mu (first part)
     auto BL_mu2_1 =
-        ijac(solution_expression, geometric_mapping).cwisetr(); // validated
-    auto &BL_mu2_2 = BL_mu1_2;                                  // validated
-    auto BL_mu2 = lame_mu_ * (BL_mu2_2 % BL_mu2_1) * meas_expr; // validated
+        ijac(solution_expression, geometric_mapping).cwisetr();  // validated
+    auto &BL_mu2_2 = BL_mu1_2;                                   // validated
+    auto BL_mu2 = lame_mu_ * (BL_mu2_2 % BL_mu2_1) * meas_expr;  // validated
 
     auto inv_jac_T = inv_jacs.tr();
     auto BL_mu2_1_dx = -inv_jac_T * jac(basis_function).tr() * inv_jac_T *
-                       jac(solution_expression).cwisetr(); // validated
-    auto &BL_mu2_2_dx = BL_mu1_2_dx;                       // validated
+                       jac(solution_expression).cwisetr();  // validated
+    auto &BL_mu2_2_dx = BL_mu1_2_dx;                        // validated
 
     auto BL_mu2_dx0 =
-        lame_mu_ * BL_mu2_2 % BL_mu2_1_dx * meas_expr; // validated
+        lame_mu_ * BL_mu2_2 % BL_mu2_1_dx * meas_expr;  // validated
     auto BL_mu2_dx1 =
-        lame_mu_ * frobenius(BL_mu2_2_dx, BL_mu2_1) * meas_expr; // validated
+        lame_mu_ * frobenius(BL_mu2_2_dx, BL_mu2_1) * meas_expr;  // validated
     auto BL_mu2_dx2 = lame_mu_ * frobenius(BL_mu2_2, BL_mu2_1).cwisetr() *
-                      meas_expr_dx; // validated
+                      meas_expr_dx;  // validated
 
     // Assemble
-    expr_assembler_pde.assemble(BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 +
-                                    BL_mu2_dx0 + BL_mu2_dx2,
-                                BL_mu1_dx1, BL_mu2_dx1);
+    expr_assembler_pde.assemble(
+        BL_lambda_dx + BL_mu1_dx0 + BL_mu1_dx2 + BL_mu2_dx0 + BL_mu2_dx2,
+        BL_mu1_dx1, BL_mu2_dx1);
 
     // Same for source term
     if (has_source_id) {
@@ -527,8 +555,8 @@ public:
     return sensitivities_py;
   }
 
-  void
-  GetParameterSensitivities(std::string filename // Filename for parametrization
+  void GetParameterSensitivities(
+      std::string filename  // Filename for parametrization
   ) {
     const Timer timer("GetParameterSensitivities");
     gsFileData<> fd(filename);
@@ -613,7 +641,7 @@ public:
     // geometry_expression_ptr->copyCoefs(mp_new);
   }
 
-private:
+ private:
   // -------------------------
   /// First Lame constant
   real_t lame_lambda_{2000000};
@@ -689,4 +717,4 @@ private:
 #endif
 };
 
-} // namespace pygadjoints
+}  // namespace pygadjoints

@@ -26,17 +26,20 @@ gismo_options = [
                     "type": "FunctionExpr",
                     "dim": "2",
                     "index": "0",
+                    "c": "2",
                 },
-                "text": "0",
-            },
-            {
-                "tag": "Function",
-                "attributes": {
-                    "type": "FunctionExpr",
-                    "dim": "2",
-                    "index": "1",
-                },
-                "text": "\n      -1\n    ",
+                "children": [
+                    {
+                        "tag": "c",
+                        "attributes": {"index": "0"},
+                        "text": "0",
+                    },
+                    {
+                        "tag": "c",
+                        "attributes": {"index": "1"},
+                        "text": "0",
+                    },
+                ],
             },
             {
                 "tag": "Function",
@@ -71,15 +74,6 @@ gismo_options = [
             {
                 "tag": "bc",
                 "attributes": {
-                    "type": "Dirichlet",
-                    "function": "0",
-                    "unknown": "1",
-                    "name": "BID2",
-                },
-            },
-            {
-                "tag": "bc",
-                "attributes": {
                     "type": "Neumann",
                     "function": "2",
                     "unknown": "0",
@@ -90,7 +84,7 @@ gismo_options = [
     },
     {
         "tag": "OptionList",
-        "attributes": {"id": "3"},
+        "attributes": {"id": "4"},
         "text": "\n    ",
         "children": [
             {

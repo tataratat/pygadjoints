@@ -131,13 +131,15 @@ class Optimizer:
             : self.para_spline.cps.shape[0]
         ].reshape(-1, 1)
         self.macro_spline.cps.ravel()[self.macro_ctps] = (
-            parameters[self.para_spline.cps.shape[0] :]
+            parameters[self.para_spline.cps.shape[0]:]
             + self.macro_spline_original.cps.ravel()[self.macro_ctps]
         )
         self.prepare_microstructure()
         if self.last_parameters is None:
             # First iteration
-            self.linear_solver.init(self.get_filename(), self.n_refinements)
+            self.linear_solver.init(
+                self.get_filename(), self.n_refinements, 0, False
+            )
             self.linear_solver.read_control_point_sensitivities(
                 self.get_filename() + ".fields.xml"
             )
@@ -294,9 +296,9 @@ def main():
 
     # Geometry definition
     tiles_with_load = 2
-    tiling = [24, 12]
+    tiling = [6, 3]
     parameter_spline_degrees = [1, 1]
-    parameter_spline_cps_dimensions = [12, 6]
+    parameter_spline_cps_dimensions = [3, 2]
     parameter_default_value = 0.125
 
     scaling_factor_objective_function = 1e-2
@@ -362,7 +364,7 @@ def main():
         n_threads=4,
         write_logfiles=write_logfiles,
         max_volume=1.5,
-        macro_ctps=[],
+        macro_ctps=[4, 5, 6, 7],
         parameter_default_value=parameter_default_value,
     )
 

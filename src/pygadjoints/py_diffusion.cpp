@@ -10,7 +10,8 @@ void add_diffusion_problem(py::module_ &m) {
       .def(py::init<>())
       // Manipulating the problem and initialization
       .def("init", &pygadjoints::DiffusionProblem::Init, py::arg("fname"),
-           py::arg("refinements"), py::arg("print_summary") = false)
+           py::arg("refinements"), py::arg("degree_elevations"),
+           py::arg("print_summary") = false)
       .def("set_material_constants",
            &pygadjoints::DiffusionProblem::SetMaterialConstants,
            py::arg("thermal_diffusivity"))
@@ -31,6 +32,18 @@ void add_diffusion_problem(py::module_ &m) {
       .def("assemble", &pygadjoints::DiffusionProblem::Assemble)
       .def("solve_linear_system",
            &pygadjoints::DiffusionProblem::SolveLinearSystem)
+      .def("solve_adjoint_system",
+           &pygadjoints::DiffusionProblem::SolveAdjointProblem)
+
+      // Scalar measures and their derivatives
+      .def("volume", &pygadjoints::DiffusionProblem::ComputeVolume)
+      .def("volume_deris_wrt_ctps",
+           &pygadjoints::DiffusionProblem::ComputeVolumeDerivativeToCTPS)
+      .def("objective_function",
+           &pygadjoints::DiffusionProblem::ComputeObjectiveFunction)
+      .def("objective_function_deris_wrt_ctps",
+           &pygadjoints::DiffusionProblem::
+               ComputeObjectiveFunctionDerivativeWrtCTPS)
 
   // OpenMP specifics
 #ifdef PYGADJOINTS_USE_OPENMP

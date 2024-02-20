@@ -116,7 +116,8 @@ class DiffusionProblem {
   void ReadInputFromFile(const std::string &filename) {
     const Timer timer("ReadInputFromFile");
     // IDs in the text file (might change later)
-    const int mp_id{0}, source_id{1}, bc_id{2}, solution_id{3}, ass_opt_id{4};
+    const int mp_id{0}, source_id{1}, bc_id{2}, solution_id{3}, ass_opt_id{4},
+        target_function_id{11};
 
     has_source_id = false;
     has_solution = false;
@@ -137,6 +138,13 @@ class DiffusionProblem {
       has_source_id = true;
     }
 
+    // Check if the file has a target function (Can also be applicable for
+    // target deformation on elasticity problems)
+    if (fd.hasId(target_function_id)) {
+      fd.getId(target_function_id, target_solution);
+      has_target_id = true;
+    }
+
     // Read Boundary conditions
     fd.getId(bc_id, boundary_conditions);
     boundary_conditions.setGeoMap(mp_pde);
@@ -151,20 +159,24 @@ class DiffusionProblem {
     }
   }
 
-  void Init(const std::string &filename, const int numRefine,
+  void Init(const std::string &filename, const int number_of_refinements,
+            const int number_degree_elevations,
             const bool print_summary = false) {
     const Timer timer("Initialisation");
     // Read input parameters
     ReadInputFromFile(filename);
 
     // Set number of refinements
-    n_refinements = numRefine;
+    n_refinements = number_of_refinements;
 
     //! [Refinement]
     function_basis = gsMultiBasis<>(mp_pde, true);
 
+    // p-refine
+    function_basis.degreeElevate(number_degree_elevations);
+
     // h-refine each basis
-    for (int r = 0; r < n_refinements; ++r) {
+    for (int r{0}; r < n_refinements; ++r) {
       function_basis.uniformRefine();
     }
 
@@ -282,6 +294,330 @@ class DiffusionProblem {
     return expr_evaluator_ptr->integral(meas(*geometry_expression_ptr));
   }
 
+  py::array_t<double> ComputeVolumeDerivativeToCTPS() {
+    const Timer timer("ComputeVolumeDerivativeToCTPS");
+    // Compute the derivative of the volume of the domain with respect to
+    // the control points Auxiliary expressions
+    const space &basis_function = *basis_function_ptr;
+    auto jacobian = jac(*geometry_expression_ptr);       // validated
+    auto inv_jacs = jacobian.ginv();                     // validated
+    auto meas_expr = meas(*geometry_expression_ptr);     // validated
+    auto djacdc = jac(basis_function);                   // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();            // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
+    expr_assembler_pde.assemble(meas_expr_dx.tr());
+
+    const auto volume_deriv =
+        expr_assembler_pde.rhs().transpose() * (*ctps_sensitivities_matrix_ptr);
+
+    py::array_t<double> derivative(volume_deriv.size());
+    double *derivative_ptr = static_cast<double *>(derivative.request().ptr);
+    for (int i{}; i < volume_deriv.size(); i++) {
+      derivative_ptr[i] = volume_deriv(0, i);
+    }
+    return derivative;
+  }
+
+  double ComputeObjectiveFunction() {
+    const Timer timer("ComputeObjectiveFunction");
+    if (!geometry_expression_ptr) {
+      throw std::runtime_error("Error no geometry expression found.");
+    }
+    if (!has_target_id) {
+      std::cerr
+          << "No target function defined, cannot evaluate objective function"
+          << std::endl;
+      return 0.0;
+    }
+
+    // Auxiliary
+    solution &solution_expression = *solution_expression_ptr;
+    geometryMap &geometric_mapping = *geometry_expression_ptr;
+    auto target_solution_expr =
+        expr_assembler_pde.getCoeff(target_solution, geometric_mapping);
+    auto difference = solution_expression - target_solution_expr;
+
+    // Compute objective function on neumann boundary
+    real_t obj_value = expr_evaluator_ptr->integralBdrBc(
+        boundary_conditions.get("Neumann"),
+        (difference * difference) * nv(geometric_mapping).norm());
+
+    return obj_value;
+  }
+
+  void SolveAdjointProblem() {
+    const Timer timer("SolveAdjointProblem");
+
+    // Auxiliary references
+    const geometryMap &geometric_mapping = *geometry_expression_ptr;
+    const space &basis_function = *basis_function_ptr;
+    const solution &solution_expression = *solution_expression_ptr;
+    auto target_solution_expr =
+        expr_assembler_pde.getCoeff(target_solution, geometric_mapping);
+    auto difference = solution_expression - target_solution_expr;
+
+    //////////////////////////////////////
+    // Derivative of Objective Function //
+    //////////////////////////////////////
+    expr_assembler_pde.clearRhs();
+
+    // Note that we assemble the negative part of the equation to avoid a
+    // copy after solving
+    expr_assembler_pde.assembleBdr(
+        boundary_conditions.get("Neumann"),
+        2 * basis_function * difference * nv(geometric_mapping).norm());
+    const auto objective_function_derivative = expr_assembler_pde.rhs();
+
+    /////////////////////////////////
+    // Solving the adjoint problem //
+    /////////////////////////////////
+    auto rhs_vector = expr_assembler_pde.rhs();
+
+    // Initialize linear solver
+    SolverType solverAdjoint;
+    solverAdjoint.compute(*system_matrix);
+
+    // solve adjoint function
+    lagrange_multipliers_ptr = std::make_shared<gsMatrix<>>(
+        -solverAdjoint.solve(expr_assembler_pde.rhs()));
+    expr_assembler_pde.clearMatrix(true);
+    expr_assembler_pde.clearRhs();
+  }
+
+  py::array_t<double> ComputeObjectiveFunctionDerivativeWrtCTPS() {
+    const Timer timer("ComputeObjectiveFunctionDerivativeWrtCTPS");
+    // Check if all required information is available
+    if (!(geometry_expression_ptr && basis_function_ptr &&
+          solution_expression_ptr && lagrange_multipliers_ptr)) {
+      throw std::runtime_error(
+          "Some of the required values are not yet initialized.");
+    }
+
+    // if (!(ctps_sensitivities_matrix_ptr)) {
+    //   throw std::runtime_error("CTPS Matrix has not been computed yet.");
+    // }
+
+    // Auxiliary references
+    const geometryMap &geometric_mapping = *geometry_expression_ptr;
+    const space &basis_function = *basis_function_ptr;
+    const space &geometry_basis_function = *geometry_function_space_ptr;
+    const solution &solution_expression = *solution_expression_ptr;
+
+    ////////////////////////////////
+    // Derivative of the LHS Form //
+    ////////////////////////////////
+
+    // Auxiliary expressions
+    auto jacobian = jac(geometric_mapping);    // validated
+    auto inv_jacs = jacobian.ginv();           // validated
+    auto meas_expr = meas(geometric_mapping);  // validated
+
+    // Here the whole thing gets a little more complicated. G+smo can only
+    // assemble quadratic matrices, but the derivative matrix is non-quadratic,
+    // as we derive the residual of a scalar field by a vector valued
+    // expression. To circumvent this, we assemble the matrices for the
+    // individual components and assmble block matrices in the following.
+
+    for (index_t i_dimension{0}; i_dimension < dimensionality_; i_dimension++) {
+      auto djacdc = dJacdc(basis_function, i_dimension);
+      auto aux_expr = (djacdc * inv_jacs);                 // validated
+      auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
+
+      // Testing system
+      // Evaluator
+      gsVector<> point(2);
+      point << 0.1, 0.69;
+
+      // Part I
+      auto i_grad_of_solution = igrad(solution_expression, geometric_mapping);
+      auto i_grad_of_solution_deriv =
+          igrad(solution_expression, geometric_mapping) *
+          aux_expr;  // validated
+
+      // Part II
+      auto i_grad_bf = igrad(basis_function, geometric_mapping);
+      auto i_grad_bf_deriv =
+          igrad(basis_function, geometric_mapping).cwisetr().tr() *
+          aux_expr;  // validated
+
+      //
+      std::cout << "Expression i_grad_of_solution" << i_grad_of_solution
+                << "\n\nEvaluates to :"
+                << expr_evaluator_ptr->eval(i_grad_of_solution, point)
+                << "\nCols : " << i_grad_of_solution.cols()
+                << "\nRows : " << i_grad_of_solution.rows()
+                << "\nCardinality : " << i_grad_of_solution.cardinality()
+                << "\n\n"
+                << std::endl;
+
+      //
+      std::cout << "Expression i_grad_bf" << i_grad_bf << "\n\nEvaluates to :"
+                << expr_evaluator_ptr->eval(i_grad_bf, point)
+                << "\nCols : " << i_grad_bf.cols()
+                << "\nRows : " << i_grad_bf.rows()
+                << "\nCardinality : " << i_grad_bf.cardinality() << "\n\n"
+                << std::endl;
+
+      auto combination = i_grad_bf.cwisetr() * i_grad_of_solution.cwisetr();
+
+      //
+      std::cout << "Expression combination" << combination
+                << "\n\nEvaluates to :"
+                << expr_evaluator_ptr->eval(combination, point)
+                << "\nCols : " << combination.cols()
+                << "\nRows : " << combination.rows()
+                << "\nCardinality : " << combination.cardinality() << "\n\n"
+                << std::endl;
+
+      //
+      std::cout << "Expression i_grad_bf" << i_grad_bf_deriv
+                << "\n\nEvaluates to :"
+                << expr_evaluator_ptr->eval(i_grad_bf_deriv, point)
+                << "\nCols : " << i_grad_bf_deriv.cols()
+                << "\nRows : " << i_grad_bf_deriv.rows()
+                << "\nCardinality : " << i_grad_bf_deriv.cardinality() << "\n\n"
+                << std::endl;
+      //
+      std::cout << "Expression i_grad_bf" << i_grad_of_solution_deriv
+                << "\n\nEvaluates to :"
+                << expr_evaluator_ptr->eval(i_grad_of_solution_deriv, point)
+                << "\nCols : " << i_grad_of_solution_deriv.cols()
+                << "\nRows : " << i_grad_of_solution_deriv.rows()
+                << "\nCardinality : " << i_grad_of_solution_deriv.cardinality()
+                << "\n\n"
+                << std::endl;
+
+      // Start to combine the individual components of the biliner form
+      auto first = thermal_diffusivity_ *
+                   (i_grad_bf.cwisetr() * i_grad_of_solution_deriv.cwisetr()) *
+                   meas_expr;  // validated (results in 18x9->
+                               // must be transposed)
+      auto second = thermal_diffusivity_ *
+                    frobenius(i_grad_bf_deriv, i_grad_of_solution) * meas_expr;
+      auto third = thermal_diffusivity_ *
+                   (igrad(solution_expression, geometric_mapping) *
+                    igrad(basis_function, geometric_mapping).tr())
+                       .tr() *
+                   meas_expr_dx.tr();
+
+      // Start assembly
+      std::cout << "Start the assembly" << std::endl;
+      expr_assembler_pde.assemble(second);
+      std::cout << "Start the assembly" << std::endl;
+      expr_assembler_pde.assemble(first);
+      std::cout << "Start the assembly" << std::endl;
+      expr_assembler_pde.assemble(third);
+      std::cout << "Finished Assembly : " << i_dimension << std::endl;
+      expr_assembler_pde.matrix();
+    }
+
+    // // Original bilinear form (with solution inserted into bilin)
+    // auto bilin =
+    //     thermal_diffusivity_ * igrad(solution_expression, geometric_mapping)
+    //     * igrad(basis_function, geometric_mapping).tr() *
+    //     meas(geometric_mapping);
+
+    // // This is a test
+    // std::cout << "TEST:\n\nOriginal Expression : " <<
+    // i_grad_of_solution_deriv
+    //           << "\n\n"
+    //           << expr_evaluator_ptr->eval(i_grad_of_solution_deriv, point)
+    //           << "\n\nThe new Expression : " <<
+    //           i_grad_of_solution_deriv_local
+    //           << "\n\nwith\n\n"
+    //           << expr_evaluator_ptr->eval(i_grad_of_solution_deriv_local,
+    //           point)
+    //           << std::endl;
+
+    // // Start to combine the individual components of the biliner form
+    // auto first = thermal_diffusivity_ *
+    //              (i_grad_bf.cwisetr() * i_grad_of_solution_deriv.cwisetr()) *
+    //              meas_expr;  // validated (results in 18x9->
+    //                          // must be transposed)
+
+    // auto second = thermal_diffusivity_ *
+    //               frobenius(i_grad_bf_deriv, i_grad_of_solution) * meas_expr;
+    // auto third = thermal_diffusivity_ *
+    //              (igrad(solution_expression, geometric_mapping) *
+    //               igrad(basis_function, geometric_mapping).tr())
+    //                  .tr() *
+    //              meas_expr_dx.tr();
+    // //
+    // std::cout << "Before assembly)" << std::endl;
+    // // Assemble
+    // std::cout << "\nCols : " << third.cols() << "\nRows : " << third.rows()
+    //           << std::endl;
+    // expr_assembler_pde.assemble(third);
+    // std::cout << "AFTER assembly 3" << std::endl;
+
+    // std::cout << "SECOND\nCardinality : " << third.cardinality()
+    //           << "\nCols : " << third.cols() << "\nRows : " << third.rows()
+    //           << std::endl;
+    // // expr_assembler_pde.assemble(second);
+    // std::cout << "AFTER assembly 2" << std::endl;
+    // expr_assembler_pde.assemble(first);
+    // std::cout << "AFTER assembly 1" << std::endl;
+
+    // // Same for source term
+    // if (has_source_id) {
+    //   // Linear Form Part
+    //   std::cout << "This should no happen" << std::endl;
+    // }
+
+    // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled
+    const auto sensitivities =
+        ((lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix()));
+
+    // Write eigen matrix into a py::array
+    py::array_t<double> sensitivities_py(sensitivities.size());
+    double *sensitivities_py_ptr =
+        static_cast<double *>(sensitivities_py.request().ptr);
+    for (int i{}; i < sensitivities.size(); i++) {
+      sensitivities_py_ptr[i] = sensitivities(0, i);
+    }
+
+    // Clear for future evaluations
+    expr_assembler_pde.clearMatrix(true);
+    expr_assembler_pde.clearRhs();
+
+    return sensitivities_py;
+
+    // ///////////////////////////
+    // // Compute sensitivities //
+    // ///////////////////////////
+
+    // if ((objective_function_ == ObjectiveFunction::compliance) &&
+    //     (has_source_id)) {
+    //   // Partial derivative of the objective function with respect to the
+    //   // control points
+    //   expr_assembler_pde.assemble(
+    //       (solution_expression.cwisetr() *
+    //        expr_assembler_pde.getCoeff(source_function,
+    //        geometric_mapping) * meas_expr_dx)
+    //           .tr());
+    // }
+    // // Assumes expr_assembler_pde.rhs() returns 0 when nothing is
+    // assembled const auto sensitivities =
+    // (expr_assembler_pde.rhs().transpose() +
+    //                             (lagrange_multipliers_ptr->transpose() *
+    //                              expr_assembler_pde.matrix())) *
+    //                            (*ctps_sensitivities_matrix_ptr);
+
+    // // Write eigen matrix into a py::array
+    // py::array_t<double> sensitivities_py(sensitivities.size());
+    // double *sensitivities_py_ptr =
+    //     static_cast<double *>(sensitivities_py.request().ptr);
+    // for (int i{}; i < sensitivities.size(); i++) {
+    //   sensitivities_py_ptr[i] = sensitivities(0, i);
+    // }
+
+    // // Clear for future evaluations
+    // expr_assembler_pde.clearMatrix(true);
+    // expr_assembler_pde.clearRhs();
+
+    // return sensitivities_py;
+  }
+
   void GetParameterSensitivities(
       std::string filename  // Filename for parametrization
   ) {
@@ -389,6 +725,10 @@ class DiffusionProblem {
   /// Expression that describes the last calculated solution
   std::shared_ptr<space> basis_function_ptr = nullptr;
 
+  /// Expression that describes the geometry's trial functions that are
+  /// multi-dimensional
+  std::shared_ptr<space> geometry_function_space_ptr = nullptr;
+
   /// Expression that describes the last calculated solution
   std::shared_ptr<geometryMap> geometry_expression_ptr = nullptr;
 
@@ -404,12 +744,17 @@ class DiffusionProblem {
   /// Solution function
   gsFunctionExpr<> analytical_solution{};
 
+  /// Target Solution function for objective function
+  gsFunctionExpr<> target_solution{};
+
   /// Solution function flag
   bool has_solution{false};
 
   // Flag for source function
   bool has_source_id{false};
 
+  // Flag target id
+  bool has_target_id{false};
   /// Function basis
   gsMultiBasis<> function_basis{};
 
