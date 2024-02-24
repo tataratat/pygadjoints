@@ -160,17 +160,6 @@ class LinearElasticityProblem {
     }
     fd.getId(bc_id, boundary_conditions);
 
-    // This block prints out all boundary conditions (patch boundary wise)
-    // for (auto a = boundary_conditions.beginAll();
-    //      a != boundary_conditions.endAll(); a++) {
-    //   std::cout << "First condition : " << a->first << std::endl;
-    //   for (const auto &element : a->second) {
-    //     std::cout << element.ctype() << "\t [" << element.patch() << ", "
-    //               << element.side() << "]"
-    //               << "\t Function : " << *element.function() << std::endl;
-    //   }
-    // }
-
     boundary_conditions.setGeoMap(mp_pde);
 
     // Check if Compiler options have been set
@@ -192,12 +181,13 @@ class LinearElasticityProblem {
 
     // Set number of refinements
     n_refinements = number_of_refinements;
+    n_degree_elevations = number_degree_elevations;
 
     //! [Refinement]
     function_basis = gsMultiBasis<>(mp_pde, true);
 
     // p-refine
-    function_basis.degreeElevate(number_degree_elevations);
+    function_basis.degreeElevate(n_degree_elevations);
 
     // h-refine each basis
     for (int r = 0; r < n_refinements; ++r) {
@@ -247,6 +237,8 @@ class LinearElasticityProblem {
                 << "\n"
                 << padding << "Minimum spline degree: \t"
                 << function_basis.minCwiseDegree() << std::endl;
+
+      boundary_conditions.print(std::cout, true);
     }
   }
 
@@ -569,6 +561,10 @@ class LinearElasticityProblem {
     fd.getId(10, patch_supports);
 
     const int design_dimension = patch_supports.col(1).maxCoeff() + 1;
+
+    // Degree-elevations
+    mp.degreeElevate(n_degree_elevations);
+
     // h-refine each basis
     for (int r = 0; r < n_refinements; ++r) {
       mp.uniformRefine();
@@ -691,10 +687,10 @@ class LinearElasticityProblem {
   /// Function basis
   gsMultiBasis<> function_basis{};
 
-  // Linear System Matrixn_refinements
+  // Linear System Matrix
   std::shared_ptr<const gsSparseMatrix<>> system_matrix = nullptr;
 
-  // Linear System Matrixn_refinements
+  // Linear System Matrix
   std::shared_ptr<gsMatrix<>> ctps_sensitivities_matrix_ptr = nullptr;
 
   // Linear System RHS
@@ -708,6 +704,9 @@ class LinearElasticityProblem {
 
   // Number of refinements in the current iteration
   int n_refinements{};
+
+  // Number of degree elevations
+  int n_degree_elevations{};
 
   // Number of refinements in the current iteration
   int dimensionality_{};

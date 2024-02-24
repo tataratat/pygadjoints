@@ -168,12 +168,13 @@ class DiffusionProblem {
 
     // Set number of refinements
     n_refinements = number_of_refinements;
+    n_degree_elevations = number_degree_elevations;
 
     //! [Refinement]
     function_basis = gsMultiBasis<>(mp_pde, true);
 
     // p-refine
-    function_basis.degreeElevate(number_degree_elevations);
+    function_basis.degreeElevate(n_degree_elevations);
 
     // h-refine each basis
     for (int r{0}; r < n_refinements; ++r) {
@@ -393,6 +394,11 @@ class DiffusionProblem {
           "Some of the required values are not yet initialized.");
     }
 
+    // Initialize the sensitivity vector
+    const int number_of_ctp_dofs = lagrange_multipliers_ptr->size();
+    gsMatrix<double> sensitivities_wrt_ctps(
+        1, dimensionality_ * number_of_ctp_dofs);
+
     // if (!(ctps_sensitivities_matrix_ptr)) {
     //   throw std::runtime_error("CTPS Matrix has not been computed yet.");
     // }
@@ -419,96 +425,69 @@ class DiffusionProblem {
     // individual components and assmble block matrices in the following.
 
     for (index_t i_dimension{0}; i_dimension < dimensionality_; i_dimension++) {
+      // Calculate local entities
       auto djacdc = dJacdc(basis_function, i_dimension);
-      auto aux_expr = (djacdc * inv_jacs);                 // validated
-      auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
+      auto aux_expr = (djacdc.tr().cwisetr() * inv_jacs);  // validated
 
-      // Testing system
-      // Evaluator
-      gsVector<> point(2);
-      point << 0.1, 0.69;
+      auto meas_expr_dx = meas_expr * (aux_expr).trace();  // NEEEDS VALIDATION
 
-      // Part I
-      auto i_grad_of_solution = igrad(solution_expression, geometric_mapping);
+      // Original Forms
+      auto i_grad_of_solution =
+          igrad(solution_expression, geometric_mapping);  // works fine
+      auto i_grad_bf = igrad(basis_function, geometric_mapping);
+
+      // Derivatives
       auto i_grad_of_solution_deriv =
           igrad(solution_expression, geometric_mapping) *
-          aux_expr;  // validated
-
-      // Part II
-      auto i_grad_bf = igrad(basis_function, geometric_mapping);
-      auto i_grad_bf_deriv =
-          igrad(basis_function, geometric_mapping).cwisetr().tr() *
-          aux_expr;  // validated
+          aux_expr;  // Validated
+      auto i_grad_bf_deriv = igrad(basis_function, geometric_mapping) *
+                             aux_expr;  // Seems to work (tested vs numpy)
 
       //
-      std::cout << "Expression i_grad_of_solution" << i_grad_of_solution
-                << "\n\nEvaluates to :"
-                << expr_evaluator_ptr->eval(i_grad_of_solution, point)
-                << "\nCols : " << i_grad_of_solution.cols()
-                << "\nRows : " << i_grad_of_solution.rows()
-                << "\nCardinality : " << i_grad_of_solution.cardinality()
-                << "\n\n"
-                << std::endl;
-
-      //
-      std::cout << "Expression i_grad_bf" << i_grad_bf << "\n\nEvaluates to :"
-                << expr_evaluator_ptr->eval(i_grad_bf, point)
-                << "\nCols : " << i_grad_bf.cols()
-                << "\nRows : " << i_grad_bf.rows()
-                << "\nCardinality : " << i_grad_bf.cardinality() << "\n\n"
-                << std::endl;
-
-      auto combination = i_grad_bf.cwisetr() * i_grad_of_solution.cwisetr();
-
-      //
-      std::cout << "Expression combination" << combination
-                << "\n\nEvaluates to :"
-                << expr_evaluator_ptr->eval(combination, point)
-                << "\nCols : " << combination.cols()
-                << "\nRows : " << combination.rows()
-                << "\nCardinality : " << combination.cardinality() << "\n\n"
-                << std::endl;
-
-      //
-      std::cout << "Expression i_grad_bf" << i_grad_bf_deriv
-                << "\n\nEvaluates to :"
-                << expr_evaluator_ptr->eval(i_grad_bf_deriv, point)
-                << "\nCols : " << i_grad_bf_deriv.cols()
-                << "\nRows : " << i_grad_bf_deriv.rows()
-                << "\nCardinality : " << i_grad_bf_deriv.cardinality() << "\n\n"
-                << std::endl;
-      //
-      std::cout << "Expression i_grad_bf" << i_grad_of_solution_deriv
-                << "\n\nEvaluates to :"
-                << expr_evaluator_ptr->eval(i_grad_of_solution_deriv, point)
-                << "\nCols : " << i_grad_of_solution_deriv.cols()
-                << "\nRows : " << i_grad_of_solution_deriv.rows()
-                << "\nCardinality : " << i_grad_of_solution_deriv.cardinality()
-                << "\n\n"
-                << std::endl;
+      // auto print_type = [&](const auto &expression) -> std::string {
+      //   return (expression.isVectorTr()
+      //               ? "VectorTr "
+      //               : (expression.isVector()
+      //                      ? "Vector "
+      //                      : (expression.isMatrix() ? "Matrix " : "Scalar
+      //                      ")));
+      // };
+      // std::cout << "Expression basis_function : " << basis_function
+      //           << "\n\nEvaluates to :"
+      //           << expr_evaluator_ptr->eval(basis_function, point)
+      //           << "\nCols : " << basis_function.cols()
+      //           << "\nRows : " << basis_function.rows()
+      //           << "\nCardinality : " << basis_function.cardinality()
+      //           << "\nType : " << print_type(basis_function) << "\n\n"
+      //           << std::endl;
 
       // Start to combine the individual components of the biliner form
       auto first = thermal_diffusivity_ *
-                   (i_grad_bf.cwisetr() * i_grad_of_solution_deriv.cwisetr()) *
-                   meas_expr;  // validated (results in 18x9->
-                               // must be transposed)
+                   (i_grad_bf * i_grad_of_solution_deriv.cwisetr()) *
+                   meas_expr;  // Validated
+
       auto second = thermal_diffusivity_ *
-                    frobenius(i_grad_bf_deriv, i_grad_of_solution) * meas_expr;
-      auto third = thermal_diffusivity_ *
-                   (igrad(solution_expression, geometric_mapping) *
-                    igrad(basis_function, geometric_mapping).tr())
-                       .tr() *
-                   meas_expr_dx.tr();
+                    frobenius(i_grad_bf_deriv, i_grad_of_solution) *
+                    meas_expr;  // Validated with numpy
+
+      //
+      auto third =
+          thermal_diffusivity_ *
+          multiply(igrad(basis_function, geometric_mapping) *
+                       igrad(solution_expression, geometric_mapping).cwisetr(),
+                   meas_expr_dx);  // Validated
 
       // Start assembly
-      std::cout << "Start the assembly" << std::endl;
-      expr_assembler_pde.assemble(second);
-      std::cout << "Start the assembly" << std::endl;
-      expr_assembler_pde.assemble(first);
-      std::cout << "Start the assembly" << std::endl;
-      expr_assembler_pde.assemble(third);
-      std::cout << "Finished Assembly : " << i_dimension << std::endl;
-      expr_assembler_pde.matrix();
+      expr_assembler_pde.assemble(first + second + third);
+      std::cout << 0 << ", " << i_dimension * number_of_ctp_dofs << ", " << 1
+                << ", " << (i_dimension + 1) * number_of_ctp_dofs << std::endl;
+      std::cout << lagrange_multipliers_ptr->transpose() *
+                       expr_assembler_pde.matrix()
+                << std::endl;
+      sensitivities_wrt_ctps.block(0, i_dimension * number_of_ctp_dofs, 1,
+                                   number_of_ctp_dofs) =
+          lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix();
+      std::cout << sensitivities_wrt_ctps << std::endl;
     }
 
     // // Original bilinear form (with solution inserted into bilin)
@@ -629,6 +608,9 @@ class DiffusionProblem {
     fd.getId(10, patch_supports);
 
     const int design_dimension = patch_supports.col(1).maxCoeff() + 1;
+
+    // Degree-elevations
+    mp.degreeElevate(n_degree_elevations);
     // h-refine each basis
     for (int r = 0; r < n_refinements; ++r) {
       mp.uniformRefine();
@@ -672,6 +654,13 @@ class DiffusionProblem {
 
     // Import mesh and load relevant information
     gsMultiPatch<> mp_new;
+
+    // // Degree-elevations
+    // mp.degreeElevate(n_degree_elevations);
+    // // h-refine each basis
+    // for (int r = 0; r < n_refinements; ++r) {
+    //   mp.uniformRefine();
+    // }
 
     gsFileData<> fd(fname);
     fd.getId(0, mp_new);
@@ -775,6 +764,9 @@ class DiffusionProblem {
 
   // Number of refinements in the current iteration
   int n_refinements{};
+
+  // Number of degree elevations
+  int n_degree_elevations{};
 
   // Number of refinements in the current iteration
   int dimensionality_{};
