@@ -223,6 +223,10 @@ class DiffusionProblem {
                 << "\n"
                 << padding << "Minimum spline degree: \t"
                 << function_basis.minCwiseDegree() << std::endl;
+
+      boundary_conditions.print(std::cout, true);
+
+      std::cout << "Source Function  : " << source_function << std::endl;
     }
   }
 
@@ -465,42 +469,26 @@ class DiffusionProblem {
                                    number_of_ctp_dofs) =
           lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix();
 
-      // Same for source term
-      if (has_source_id) {
-        // // Linear Form Part
-        // std::cout << "Has source function" << std::endl;
-        // auto source_function_expression =
-        //     expr_assembler_pde.getCoeff(source_function, geometric_mapping);
-        // auto lin_form_derivative =
-        //     multiply(basis_function * source_function_expression,
-        //     meas_expr_dx);
-
-        // gsVector<> point(2);
-        // point << 0.3, 0.7;
-        // auto print_type = [&](const auto &expression) -> std::string {
-        //   return (expression.isVectorTr()
-        //               ? "VectorTr "
-        //               : (expression.isVector()
-        //                      ? "Vector "
-        //                      : (expression.isMatrix() ? "Matrix " :
-        //                      "Scalar")));
-        // };
-        // std::cout << "Expression lin_form_derivative : " <<
-        // lin_form_derivative
-        //           << "\n\nEvaluates to :"
-        //           << expr_evaluator_ptr->eval(lin_form_derivative, point)
-        //           << "\nCols : " << lin_form_derivative.cols()
-        //           << "\nRows : " << lin_form_derivative.rows()
-        //           << "\nCardinality : " << lin_form_derivative.cardinality()
-        //           << "\nType : " << print_type(lin_form_derivative) << "\n\n"
-        //           << std::endl;
-        // sensitivities_wrt_ctps.block(0, i_dimension * number_of_ctp_dofs, 1,
-        //                              number_of_ctp_dofs) +=
-        //     lagrange_multipliers_ptr->transpose() * expr_assembler_pde.rhs();
-        // expr_assembler_pde.assemble(lin_form_derivative);
-      }
       // Prepare Matrix for future use
       expr_assembler_pde.clearMatrix(true);
+
+      // Same for source term
+      if (has_source_id) {
+        // Linear Form Part
+        auto source_function_expression =
+            expr_assembler_pde.getCoeff(source_function, geometric_mapping);
+        auto lin_form_derivative =
+            multiply(basis_function * source_function_expression, meas_expr_dx);
+        expr_assembler_pde.assemble(lin_form_derivative);
+
+        // Add contribution to the global sensitivities vector
+        sensitivities_wrt_ctps.block(0, i_dimension * number_of_ctp_dofs, 1,
+                                     number_of_ctp_dofs) -=
+            lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix();
+
+        // Prepare Matrix for future use
+        expr_assembler_pde.clearMatrix(true);
+      }
     }
 
     // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled

@@ -31,6 +31,8 @@ and no source function
 lambda_ = 1.172e-5
 density_ = 7850
 thermal_capacity_ = 420
+source_function_ = 1 / (density_ * thermal_capacity_)
+neumann_flux_ = 10 / (density_ * thermal_capacity_)
 dim = 2
 print(f"Thermal Diffusivity : {lambda_}")
 
@@ -40,7 +42,7 @@ boundary_conditions_options = [
         # F - function (source)
         "tag": "Function",
         "attributes": {"type": "FunctionExpr", "id": "1", "dim": f"{dim}"},
-        "text": "0",
+        "text": "0.00001",
     },
     {
         # Boundary Conditions
@@ -63,7 +65,7 @@ boundary_conditions_options = [
                     "dim": f"2",
                     "index": "1",
                 },
-                "text": f"10 / ({thermal_capacity_} * {density_})",
+                "text": f"{neumann_flux_} / ({thermal_capacity_} * {density_})",
             },
         ],
     },
@@ -137,16 +139,6 @@ spp.io.gismo.export(
     as_base64=True,
     labeled_boundaries=True,
 )
-microtile.patches[0].cps[0, 1] += 1e-4
-
-# spp.show(microtile.patches[0])
-spp.io.gismo.export(
-    "mini_example_dx.xml",
-    microtile,
-    options=boundary_conditions_options,
-    as_base64=True,
-    labeled_boundaries=True,
-)
 
 
 diffusion_solver = pyg.DiffusionProblem()
@@ -156,15 +148,51 @@ diffusion_solver.set_material_constants(lambda_)
 diffusion_solver.assemble()
 diffusion_solver.solve_linear_system()
 diffusion_solver.solve_adjoint_system()
-diffusion_solver.objective_function_deris_wrt_ctps()
+# diffusion_solver.print_debug()
+sensitivities = diffusion_solver.objective_function_deris_wrt_ctps()
+sensitivities_approx = np.zeros_like(sensitivities) * np.nan
+original_obj_f = diffusion_solver.objective_function()
 
 # Move ctps
+step_size = 1e-4
+n_dirichlet_ctps = microtile.patches[0].control_mesh_resolutions[0]
+n_neumann_ctps = n_dirichlet_ctps
+n_ctps = microtile.patches[0].cps.shape[0]
+for i in range(0, 2):
+    for j in range(n_dirichlet_ctps, n_ctps-n_neumann_ctps):
+        microtile.patches[0].cps[j, i] += step_size
 
-# Disturbed
-# diffusion_solver.update_geometry("mini_example_dx.xml", False)
-# diffusion_solver.objective_function_deris_wrt_ctps()
+        # spp.show(microtile.patches[0])
+        spp.io.gismo.export(
+            "mini_example_dx.xml",
+            microtile,
+            options=boundary_conditions_options,
+            as_base64=True,
+            labeled_boundaries=True,
+        )
+        microtile.patches[0].cps[j, i] -= step_size
 
-print(diffusion_solver.objective_function())
+        # Disturbed
+        diffusion_solver.update_geometry("mini_example_dx.xml", False)
+        diffusion_solver.assemble()
+        diffusion_solver.solve_linear_system()
+        sensitivities_approx[i * n_dirichlet_ctps * 2 + j - n_dirichlet_ctps] = (
+            diffusion_solver.objective_function() - original_obj_f) / step_size
+sensitivities = sensitivities[~np.isnan(sensitivities_approx)]
+sensitivities_approx = sensitivities_approx[~np.isnan(sensitivities_approx)]
+print(f"Summary of the FD comparison with step-size {step_size} :")
+print(
+    f"Sensitivities : {sensitivities.tolist()}")
+print(
+    f"Approximation : {sensitivities_approx.tolist()}")
+print(
+    f"Diff. (abs)   : {abs(sensitivities - sensitivities_approx).tolist()}")
+error = np.linalg.norm(sensitivities-sensitivities_approx)
+print(
+    f"Error (abs)   : {error}")
+print(
+    f"Error (rel)   : {error / np.linalg.norm(sensitivities)}")
+
 diffusion_solver.export_paraview("solution", False, 80**dim, True)
 diffusion_solver.export_xml("solution_2")
 print("Export successfull")
