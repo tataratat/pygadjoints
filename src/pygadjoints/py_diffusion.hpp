@@ -241,16 +241,16 @@ class DiffusionProblem {
         thermal_diffusivity_ * igrad(basis_function, geometric_mapping) *
         igrad(basis_function, geometric_mapping).tr() * meas(geometric_mapping);
 
-    // Set the boundary_conditions term
-    auto source_function_expression =
-        expr_assembler_pde.getCoeff(source_function, geometric_mapping);
-    auto lin_form =
-        basis_function * source_function_expression * meas(geometric_mapping);
-
     // Assemble
     expr_assembler_pde.assemble(bilin);
-    expr_assembler_pde.assemble(lin_form);
-
+    if (has_source_id) {
+      // Set the boundary_conditions term
+      auto source_function_expression =
+          expr_assembler_pde.getCoeff(source_function, geometric_mapping);
+      auto lin_form =
+          basis_function * source_function_expression * meas(geometric_mapping);
+      expr_assembler_pde.assemble(lin_form);
+    }
     // Compute the Neumann terms defined on physical space
     auto g_N = expr_assembler_pde.getBdrFunction(geometric_mapping);
 
@@ -425,6 +425,8 @@ class DiffusionProblem {
     // individual components and assmble block matrices in the following.
 
     for (index_t i_dimension{0}; i_dimension < dimensionality_; i_dimension++) {
+      Timer iteration_timer(" -> Assembling iteration : " +
+                            std::to_string(i_dimension));
       // Calculate local entities
       auto djacdc = dJacdc(basis_function, i_dimension);
       auto aux_expr = (djacdc.tr().cwisetr() * inv_jacs);  // validated
@@ -443,34 +445,14 @@ class DiffusionProblem {
       auto i_grad_bf_deriv = igrad(basis_function, geometric_mapping) *
                              aux_expr;  // Seems to work (tested vs numpy)
 
-      //
-      // auto print_type = [&](const auto &expression) -> std::string {
-      //   return (expression.isVectorTr()
-      //               ? "VectorTr "
-      //               : (expression.isVector()
-      //                      ? "Vector "
-      //                      : (expression.isMatrix() ? "Matrix " : "Scalar
-      //                      ")));
-      // };
-      // std::cout << "Expression basis_function : " << basis_function
-      //           << "\n\nEvaluates to :"
-      //           << expr_evaluator_ptr->eval(basis_function, point)
-      //           << "\nCols : " << basis_function.cols()
-      //           << "\nRows : " << basis_function.rows()
-      //           << "\nCardinality : " << basis_function.cardinality()
-      //           << "\nType : " << print_type(basis_function) << "\n\n"
-      //           << std::endl;
-
       // Start to combine the individual components of the biliner form
-      auto first = thermal_diffusivity_ *
+      auto first = -thermal_diffusivity_ *
                    (i_grad_bf * i_grad_of_solution_deriv.cwisetr()) *
                    meas_expr;  // Validated
 
-      auto second = thermal_diffusivity_ *
+      auto second = -thermal_diffusivity_ *
                     frobenius(i_grad_bf_deriv, i_grad_of_solution) *
                     meas_expr;  // Validated with numpy
-
-      //
       auto third =
           thermal_diffusivity_ *
           multiply(igrad(basis_function, geometric_mapping) *
@@ -479,80 +461,58 @@ class DiffusionProblem {
 
       // Start assembly
       expr_assembler_pde.assemble(first + second + third);
-      std::cout << 0 << ", " << i_dimension * number_of_ctp_dofs << ", " << 1
-                << ", " << (i_dimension + 1) * number_of_ctp_dofs << std::endl;
-      std::cout << lagrange_multipliers_ptr->transpose() *
-                       expr_assembler_pde.matrix()
-                << std::endl;
       sensitivities_wrt_ctps.block(0, i_dimension * number_of_ctp_dofs, 1,
                                    number_of_ctp_dofs) =
           lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix();
-      std::cout << sensitivities_wrt_ctps << std::endl;
+
+      // Same for source term
+      if (has_source_id) {
+        // // Linear Form Part
+        // std::cout << "Has source function" << std::endl;
+        // auto source_function_expression =
+        //     expr_assembler_pde.getCoeff(source_function, geometric_mapping);
+        // auto lin_form_derivative =
+        //     multiply(basis_function * source_function_expression,
+        //     meas_expr_dx);
+
+        // gsVector<> point(2);
+        // point << 0.3, 0.7;
+        // auto print_type = [&](const auto &expression) -> std::string {
+        //   return (expression.isVectorTr()
+        //               ? "VectorTr "
+        //               : (expression.isVector()
+        //                      ? "Vector "
+        //                      : (expression.isMatrix() ? "Matrix " :
+        //                      "Scalar")));
+        // };
+        // std::cout << "Expression lin_form_derivative : " <<
+        // lin_form_derivative
+        //           << "\n\nEvaluates to :"
+        //           << expr_evaluator_ptr->eval(lin_form_derivative, point)
+        //           << "\nCols : " << lin_form_derivative.cols()
+        //           << "\nRows : " << lin_form_derivative.rows()
+        //           << "\nCardinality : " << lin_form_derivative.cardinality()
+        //           << "\nType : " << print_type(lin_form_derivative) << "\n\n"
+        //           << std::endl;
+        // sensitivities_wrt_ctps.block(0, i_dimension * number_of_ctp_dofs, 1,
+        //                              number_of_ctp_dofs) +=
+        //     lagrange_multipliers_ptr->transpose() * expr_assembler_pde.rhs();
+        // expr_assembler_pde.assemble(lin_form_derivative);
+      }
+      // Prepare Matrix for future use
+      expr_assembler_pde.clearMatrix(true);
     }
-
-    // // Original bilinear form (with solution inserted into bilin)
-    // auto bilin =
-    //     thermal_diffusivity_ * igrad(solution_expression, geometric_mapping)
-    //     * igrad(basis_function, geometric_mapping).tr() *
-    //     meas(geometric_mapping);
-
-    // // This is a test
-    // std::cout << "TEST:\n\nOriginal Expression : " <<
-    // i_grad_of_solution_deriv
-    //           << "\n\n"
-    //           << expr_evaluator_ptr->eval(i_grad_of_solution_deriv, point)
-    //           << "\n\nThe new Expression : " <<
-    //           i_grad_of_solution_deriv_local
-    //           << "\n\nwith\n\n"
-    //           << expr_evaluator_ptr->eval(i_grad_of_solution_deriv_local,
-    //           point)
-    //           << std::endl;
-
-    // // Start to combine the individual components of the biliner form
-    // auto first = thermal_diffusivity_ *
-    //              (i_grad_bf.cwisetr() * i_grad_of_solution_deriv.cwisetr()) *
-    //              meas_expr;  // validated (results in 18x9->
-    //                          // must be transposed)
-
-    // auto second = thermal_diffusivity_ *
-    //               frobenius(i_grad_bf_deriv, i_grad_of_solution) * meas_expr;
-    // auto third = thermal_diffusivity_ *
-    //              (igrad(solution_expression, geometric_mapping) *
-    //               igrad(basis_function, geometric_mapping).tr())
-    //                  .tr() *
-    //              meas_expr_dx.tr();
-    // //
-    // std::cout << "Before assembly)" << std::endl;
-    // // Assemble
-    // std::cout << "\nCols : " << third.cols() << "\nRows : " << third.rows()
-    //           << std::endl;
-    // expr_assembler_pde.assemble(third);
-    // std::cout << "AFTER assembly 3" << std::endl;
-
-    // std::cout << "SECOND\nCardinality : " << third.cardinality()
-    //           << "\nCols : " << third.cols() << "\nRows : " << third.rows()
-    //           << std::endl;
-    // // expr_assembler_pde.assemble(second);
-    // std::cout << "AFTER assembly 2" << std::endl;
-    // expr_assembler_pde.assemble(first);
-    // std::cout << "AFTER assembly 1" << std::endl;
-
-    // // Same for source term
-    // if (has_source_id) {
-    //   // Linear Form Part
-    //   std::cout << "This should no happen" << std::endl;
-    // }
 
     // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled
     const auto sensitivities =
         ((lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix()));
 
     // Write eigen matrix into a py::array
-    py::array_t<double> sensitivities_py(sensitivities.size());
+    py::array_t<double> sensitivities_py(sensitivities_wrt_ctps.size());
     double *sensitivities_py_ptr =
         static_cast<double *>(sensitivities_py.request().ptr);
-    for (int i{}; i < sensitivities.size(); i++) {
-      sensitivities_py_ptr[i] = sensitivities(0, i);
+    for (int i{}; i < sensitivities_wrt_ctps.size(); i++) {
+      sensitivities_py_ptr[i] = sensitivities_wrt_ctps(0, i);
     }
 
     // Clear for future evaluations
@@ -581,20 +541,6 @@ class DiffusionProblem {
     //                             (lagrange_multipliers_ptr->transpose() *
     //                              expr_assembler_pde.matrix())) *
     //                            (*ctps_sensitivities_matrix_ptr);
-
-    // // Write eigen matrix into a py::array
-    // py::array_t<double> sensitivities_py(sensitivities.size());
-    // double *sensitivities_py_ptr =
-    //     static_cast<double *>(sensitivities_py.request().ptr);
-    // for (int i{}; i < sensitivities.size(); i++) {
-    //   sensitivities_py_ptr[i] = sensitivities(0, i);
-    // }
-
-    // // Clear for future evaluations
-    // expr_assembler_pde.clearMatrix(true);
-    // expr_assembler_pde.clearRhs();
-
-    // return sensitivities_py;
   }
 
   void GetParameterSensitivities(
