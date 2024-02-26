@@ -29,7 +29,7 @@ class DiffusionProblem {
   using SolverType = gsSparseSolver<>::CGDiagonal;
   // using SolverType = gsSparseSolver<>::BiCGSTABILUT;
 
- public:
+public:
   DiffusionProblem() : expr_assembler_pde(1, 1) {
 #ifdef PYGADJOINTS_USE_OPENMP
     omp_set_num_threads(std::min(omp_get_max_threads(), n_omp_threads));
@@ -259,9 +259,9 @@ class DiffusionProblem {
     auto g_N = expr_assembler_pde.getBdrFunction(geometric_mapping);
 
     // Neumann conditions
-    expr_assembler_pde.assembleBdr(
-        boundary_conditions.get("Neumann"),
-        basis_function * g_N * nv(geometric_mapping).norm());
+    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
+                                   basis_function * g_N *
+                                       nv(geometric_mapping).norm());
 
     system_matrix =
         std::make_shared<const gsSparseMatrix<>>(expr_assembler_pde.matrix());
@@ -304,12 +304,12 @@ class DiffusionProblem {
     // Compute the derivative of the volume of the domain with respect to
     // the control points Auxiliary expressions
     const space &basis_function = *basis_function_ptr;
-    auto jacobian = jac(*geometry_expression_ptr);       // validated
-    auto inv_jacs = jacobian.ginv();                     // validated
-    auto meas_expr = meas(*geometry_expression_ptr);     // validated
-    auto djacdc = jac(basis_function);                   // validated
-    auto aux_expr = (djacdc * inv_jacs).tr();            // validated
-    auto meas_expr_dx = meas_expr * (aux_expr).trace();  // validated
+    auto jacobian = jac(*geometry_expression_ptr);      // validated
+    auto inv_jacs = jacobian.ginv();                    // validated
+    auto meas_expr = meas(*geometry_expression_ptr);    // validated
+    auto djacdc = jac(basis_function);                  // validated
+    auto aux_expr = (djacdc * inv_jacs).tr();           // validated
+    auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
     expr_assembler_pde.assemble(meas_expr_dx.tr());
 
     const auto volume_deriv =
@@ -368,9 +368,9 @@ class DiffusionProblem {
 
     // Note that we assemble the negative part of the equation to avoid a
     // copy after solving
-    expr_assembler_pde.assembleBdr(
-        boundary_conditions.get("Neumann"),
-        2 * basis_function * difference * nv(geometric_mapping).norm());
+    expr_assembler_pde.assembleBdr(boundary_conditions.get("Neumann"),
+                                   2 * basis_function * difference *
+                                       nv(geometric_mapping).norm());
     const auto objective_function_derivative = expr_assembler_pde.rhs();
 
     /////////////////////////////////
@@ -400,8 +400,8 @@ class DiffusionProblem {
 
     // Initialize the sensitivity vector
     const int number_of_ctp_dofs = lagrange_multipliers_ptr->size();
-    gsMatrix<double> sensitivities_wrt_ctps(
-        1, dimensionality_ * number_of_ctp_dofs);
+    gsMatrix<double> sensitivities_wrt_ctps(1, dimensionality_ *
+                                                   number_of_ctp_dofs);
 
     // if (!(ctps_sensitivities_matrix_ptr)) {
     //   throw std::runtime_error("CTPS Matrix has not been computed yet.");
@@ -418,9 +418,9 @@ class DiffusionProblem {
     ////////////////////////////////
 
     // Auxiliary expressions
-    auto jacobian = jac(geometric_mapping);    // validated
-    auto inv_jacs = jacobian.ginv();           // validated
-    auto meas_expr = meas(geometric_mapping);  // validated
+    auto jacobian = jac(geometric_mapping);   // validated
+    auto inv_jacs = jacobian.ginv();          // validated
+    auto meas_expr = meas(geometric_mapping); // validated
 
     // Here the whole thing gets a little more complicated. G+smo can only
     // assemble quadratic matrices, but the derivative matrix is non-quadratic,
@@ -433,35 +433,34 @@ class DiffusionProblem {
                             std::to_string(i_dimension));
       // Calculate local entities
       auto djacdc = dJacdc(basis_function, i_dimension);
-      auto aux_expr = (djacdc.tr().cwisetr() * inv_jacs);  // validated
+      auto aux_expr = (djacdc.tr().cwisetr() * inv_jacs); // validated
 
-      auto meas_expr_dx = meas_expr * (aux_expr).trace();  // NEEEDS VALIDATION
+      auto meas_expr_dx = meas_expr * (aux_expr).trace(); // NEEDS VALIDATION
 
       // Original Forms
       auto i_grad_of_solution =
-          igrad(solution_expression, geometric_mapping);  // works fine
+          igrad(solution_expression, geometric_mapping); // works fine
       auto i_grad_bf = igrad(basis_function, geometric_mapping);
 
       // Derivatives
       auto i_grad_of_solution_deriv =
-          igrad(solution_expression, geometric_mapping) *
-          aux_expr;  // Validated
+          igrad(solution_expression, geometric_mapping) * aux_expr; // Validated
       auto i_grad_bf_deriv = igrad(basis_function, geometric_mapping) *
-                             aux_expr;  // Seems to work (tested vs numpy)
+                             aux_expr; // Seems to work (tested vs numpy)
 
       // Start to combine the individual components of the biliner form
       auto first = -thermal_diffusivity_ *
                    (i_grad_bf * i_grad_of_solution_deriv.cwisetr()) *
-                   meas_expr;  // Validated
+                   meas_expr; // Validated
 
       auto second = -thermal_diffusivity_ *
                     frobenius(i_grad_bf_deriv, i_grad_of_solution) *
-                    meas_expr;  // Validated with numpy
+                    meas_expr; // Validated with numpy
       auto third =
           thermal_diffusivity_ *
           multiply(igrad(basis_function, geometric_mapping) *
                        igrad(solution_expression, geometric_mapping).cwisetr(),
-                   meas_expr_dx);  // Validated
+                   meas_expr_dx); // Validated
 
       // Start assembly
       expr_assembler_pde.assemble(first + second + third);
@@ -531,8 +530,8 @@ class DiffusionProblem {
     //                            (*ctps_sensitivities_matrix_ptr);
   }
 
-  void GetParameterSensitivities(
-      std::string filename  // Filename for parametrization
+  void
+  GetParameterSensitivities(std::string filename // Filename for parametrization
   ) {
     const Timer timer("GetParameterSensitivities");
     gsFileData<> fd(filename);
@@ -558,7 +557,8 @@ class DiffusionProblem {
     // Start the assignment
     const size_t totalSz = dof_mapper_ptr->freeSize();
     ctps_sensitivities_matrix_ptr = std::make_shared<gsMatrix<>>();
-    ctps_sensitivities_matrix_ptr->resize(totalSz, design_dimension);
+    ctps_sensitivities_matrix_ptr->resize(totalSz * dimensionality_,
+                                          design_dimension);
 
     // Rough overestimate to avoid realloations
     for (int patch_support{}; patch_support < patch_supports.rows();
@@ -566,14 +566,15 @@ class DiffusionProblem {
       const int j_patch = patch_supports(patch_support, 0);
       const int i_design = patch_supports(patch_support, 1);
       const int k_index_offset = patch_supports(patch_support, 2);
-      for (index_t k_dim = 0; k_dim != dimensionality_; k_dim++) {
-        for (size_t l_dof = 0;
-             l_dof != dof_mapper_ptr->patchSize(j_patch, k_dim); l_dof++) {
-          if (dof_mapper_ptr->is_free(l_dof, j_patch, k_dim)) {
-            const int global_id = dof_mapper_ptr->index(l_dof, j_patch, k_dim);
-            ctps_sensitivities_matrix_ptr->operator()(global_id, i_design) =
+      for (size_t l_dof = 0; l_dof != dof_mapper_ptr->patchSize(j_patch, 0);
+           l_dof++) {
+        if (dof_mapper_ptr->is_free(l_dof, j_patch, 0)) {
+          const int global_id = dof_mapper_ptr->index(l_dof, j_patch, 0);
+          for (index_t k_dim = 0; k_dim != dimensionality_; k_dim++) {
+            ctps_sensitivities_matrix_ptr->operator()(
+                global_id + k_dim * totalSz, i_design) =
                 static_cast<double>(mp.patch(j_patch).coef(
-                    l_dof, k_dim + k_index_offset * dimensionality_));
+                    l_dof, k_index_offset * dimensionality_));
           }
         }
       }
@@ -627,7 +628,7 @@ class DiffusionProblem {
     // geometry_expression_ptr->copyCoefs(mp_new);
   }
 
- private:
+private:
   // -------------------------
   /// First Lame constant
   real_t thermal_diffusivity_{1.};
@@ -710,4 +711,4 @@ class DiffusionProblem {
 #endif
 };
 
-}  // namespace pygadjoints
+} // namespace pygadjoints

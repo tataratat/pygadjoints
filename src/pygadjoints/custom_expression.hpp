@@ -7,21 +7,21 @@ single matrix with cardinality 1
 */
 template <typename E1, typename E2>
 class frobenius_prod_expr : public _expr<frobenius_prod_expr<E1, E2>> {
- public:
+public:
   typedef typename E1::Scalar Scalar;
   enum {
     ScalarValued = 0,
     Space = E1::Space,
-    ColBlocks = 0  // E1::ColBlocks || E2::ColBlocks
+    ColBlocks = 0 // E1::ColBlocks || E2::ColBlocks
   };
 
- private:
+private:
   typename E1::Nested_t _u;
   typename E2::Nested_t _v;
 
   mutable gsMatrix<Scalar> res;
 
- public:
+public:
   frobenius_prod_expr(_expr<E1> const &u, _expr<E2> const &v) : _u(u), _v(v) {
     // todo: add check() functions, which will evaluate expressions on an empty
     // matrix (no points) to setup initial dimensions ???
@@ -73,7 +73,7 @@ class frobenius_prod_expr : public _expr<frobenius_prod_expr<E1, E2>> {
   }
 
   const gsFeSpace<Scalar> &rowVar() const { return _u.rowVar(); }
-  const gsFeSpace<Scalar> &colVar() const { return _u.rowVar(); }  // overwrite
+  const gsFeSpace<Scalar> &colVar() const { return _u.rowVar(); } // overwrite
 
   void print(std::ostream &os) const {
     os << "(";
@@ -85,8 +85,8 @@ class frobenius_prod_expr : public _expr<frobenius_prod_expr<E1, E2>> {
 };
 
 template <typename E1, typename E2>
-EIGEN_STRONG_INLINE frobenius_prod_expr<E1, E2> const frobenius(
-    _expr<E1> const &u, _expr<E2> const &v) {
+EIGEN_STRONG_INLINE frobenius_prod_expr<E1, E2> const
+frobenius(_expr<E1> const &u, _expr<E2> const &v) {
   return frobenius_prod_expr<E1, E2>(u, v);
 }
 
@@ -96,21 +96,21 @@ EIGEN_STRONG_INLINE frobenius_prod_expr<E1, E2> const frobenius(
  */
 template <typename E1, typename E2>
 class multiplication_expr : public _expr<multiplication_expr<E1, E2>> {
- public:
+public:
   typedef typename E1::Scalar Scalar;
   enum {
     ScalarValued = 0,
-    Space = E1::Space + E2::Space,  // Should always be 3
-    ColBlocks = 0                   // E1::ColBlocks || E2::ColBlocks
+    Space = E1::Space + E2::Space, // Should always be 3
+    ColBlocks = 0                  // E1::ColBlocks || E2::ColBlocks
   };
 
- private:
+private:
   typename E1::Nested_t _u;
   typename E2::Nested_t _v;
 
   mutable gsMatrix<Scalar> res;
 
- public:
+public:
   multiplication_expr(_expr<E1> const &u, _expr<E2> const &v) : _u(u), _v(v) {
     // todo: add check() functions, which will evaluate expressions on an empty
     // matrix (no points) to setup initial dimensions ???
@@ -157,7 +157,7 @@ class multiplication_expr : public _expr<multiplication_expr<E1, E2>> {
   }
 
   const gsFeSpace<Scalar> &rowVar() const { return _u.rowVar(); }
-  const gsFeSpace<Scalar> &colVar() const { return _v.colVar(); }  // overwrite
+  const gsFeSpace<Scalar> &colVar() const { return _v.colVar(); } // overwrite
 
   void print(std::ostream &os) const {
     os << "(";
@@ -169,9 +169,9 @@ class multiplication_expr : public _expr<multiplication_expr<E1, E2>> {
 };
 
 template <typename E1, typename E2>
-EIGEN_STRONG_INLINE multiplication_expr<E1, E2> const multiply(
-    _expr<E1> const &u, _expr<E2> const &v) {
+EIGEN_STRONG_INLINE multiplication_expr<E1, E2> const
+multiply(_expr<E1> const &u, _expr<E2> const &v) {
   return multiplication_expr<E1, E2>(u, v);
 }
 
-}  // namespace gismo::expr
+} // namespace gismo::expr
