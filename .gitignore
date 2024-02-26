@@ -26,3 +26,6 @@ docs/source/_generated
 **/ParaviewOutput
 **/*.csv
 **/results
+
+# Mac users
+**/.DS_Store
