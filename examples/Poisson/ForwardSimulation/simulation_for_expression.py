@@ -1,14 +1,8 @@
-import numpy as np
-import splinepy as spp
-
-import pygadjoints as pyg
-
-
 """
 This is a simple diffusion problem
 
 .. math:
-  \lambda \Delta \theta + \bar{f} = 0
+  \\lambda \\Delta \theta + \bar{f} = 0
 
 with boundary conditions
 
@@ -26,6 +20,10 @@ Zero Neumann on [0], and [1]
 
 and no source function
 """
+import numpy as np
+import splinepy as spp
+
+import pygadjoints as pyg
 
 # Define boundary conditions
 lambda_ = 1.172e-5
@@ -53,7 +51,7 @@ boundary_conditions_options = [
                 "tag": "Function",
                 "attributes": {
                     "type": "FunctionExpr",
-                    "dim": f"2",
+                    "dim": "2",
                     "index": "0",
                 },
                 "text": "0",
@@ -62,7 +60,7 @@ boundary_conditions_options = [
                 "tag": "Function",
                 "attributes": {
                     "type": "FunctionExpr",
-                    "dim": f"2",
+                    "dim": "2",
                     "index": "1",
                 },
                 "text": f"{neumann_flux_} / ({thermal_capacity_} * {density_})",
@@ -142,7 +140,7 @@ spp.io.gismo.export(
 
 
 diffusion_solver = pyg.DiffusionProblem()
-diffusion_solver.init("mini_example.xml", 0,  0, False)
+diffusion_solver.init("mini_example.xml", 0, 0, False)
 diffusion_solver.set_material_constants(lambda_)
 # Original
 diffusion_solver.assemble()
@@ -159,7 +157,7 @@ n_dirichlet_ctps = microtile.patches[0].control_mesh_resolutions[0]
 n_neumann_ctps = n_dirichlet_ctps
 n_ctps = microtile.patches[0].cps.shape[0]
 for i in range(0, 2):
-    for j in range(n_dirichlet_ctps, n_ctps-n_neumann_ctps):
+    for j in range(n_dirichlet_ctps, n_ctps - n_neumann_ctps):
         microtile.patches[0].cps[j, i] += step_size
 
         # spp.show(microtile.patches[0])
@@ -176,23 +174,21 @@ for i in range(0, 2):
         diffusion_solver.update_geometry("mini_example_dx.xml", False)
         diffusion_solver.assemble()
         diffusion_solver.solve_linear_system()
-        sensitivities_approx[i * n_dirichlet_ctps * 2 + j - n_dirichlet_ctps] = (
-            diffusion_solver.objective_function() - original_obj_f) / step_size
+        sensitivities_approx[
+            i * n_dirichlet_ctps * 2 + j - n_dirichlet_ctps
+        ] = (
+            diffusion_solver.objective_function() - original_obj_f
+        ) / step_size
 sensitivities = sensitivities[~np.isnan(sensitivities_approx)]
 sensitivities_approx = sensitivities_approx[~np.isnan(sensitivities_approx)]
 print(f"Summary of the FD comparison with step-size {step_size} :")
-print(
-    f"Sensitivities : {sensitivities.tolist()}")
-print(
-    f"Approximation : {sensitivities_approx.tolist()}")
-print(
-    f"Diff. (abs)   : {abs(sensitivities - sensitivities_approx).tolist()}")
-error = np.linalg.norm(sensitivities-sensitivities_approx)
-print(
-    f"Error (abs)   : {error}")
-print(
-    f"Error (rel)   : {error / np.linalg.norm(sensitivities)}")
+print(f"Sensitivities : {sensitivities.tolist()}")
+print(f"Approximation : {sensitivities_approx.tolist()}")
+print(f"Diff. (abs)   : {abs(sensitivities - sensitivities_approx).tolist()}")
+error = np.linalg.norm(sensitivities - sensitivities_approx)
+print(f"Error (abs)   : {error}")
+print(f"Error (rel)   : {error / np.linalg.norm(sensitivities)}")
 
 diffusion_solver.export_paraview("solution", False, 80**dim, True)
 diffusion_solver.export_xml("solution_2")
-print("Export successfull")
+print("Export successful")

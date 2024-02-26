@@ -1,8 +1,3 @@
-import numpy as np
-import splinepy as spp
-
-import pygadjoints as pyg
-
 """
 This example solves a thermal diffusion problem in the form
 
@@ -20,6 +15,10 @@ which can be obtained, iff :math:`\bar{f}` is given as
   \bar{f} = \\lambda (4 \text{sin} (2x) + 2\beta x)
 
 """
+import numpy as np
+import splinepy as spp
+
+import pygadjoints as pyg
 
 # Define boundary conditions
 lambda_ = 1.172e-5
