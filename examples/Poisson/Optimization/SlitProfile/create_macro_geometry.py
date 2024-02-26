@@ -8,13 +8,13 @@ Thereafter the geometry is created based on this approach. Other than for the
 test case used at the SIAM conference, no parts of the geometry are
 determined via spline approximation.
 """
-import splinepy as spp
 import numpy as np
+import splinepy as spp
 
 
 def create_volumetric_die(
     center_knot=0.4,
-    die_outer_radius=.1,
+    die_outer_radius=0.1,
     total_slit_width=0.1,
     slit_height=0.004,
     total_slit_width_m=0.11,
@@ -23,10 +23,10 @@ def create_volumetric_die(
     inlet_radius=0.025,
 ):
     """
-    Create an extrusion die as given in the paper 
+    Create an extrusion die as given in the paper
 
-    "Shape Optimization for Temperature Regulation in Extrusion Dies Using 
-    Microstructures", J. Zwar, G. Elber and S. Elgeti 
+    "Shape Optimization for Temperature Regulation in Extrusion Dies Using
+    Microstructures", J. Zwar, G. Elber and S. Elgeti
     with DOI: 10.1115/1.4056075
 
     Contrary to the paper, we will create a quadratic (not cubic) approximation
@@ -34,17 +34,17 @@ def create_volumetric_die(
     The resulting geometry is bicubic-linear
 
     To achieve the best possible approximation of the cylindric outer geometry,
-    we will first insert the knots before stripping the weights (all weights 
-    will reduce to C0 for the same reason, this will not affect the 
+    we will first insert the knots before stripping the weights (all weights
+    will reduce to C0 for the same reason, this will not affect the
     construction process).
 
     Parameters
     ----------
     center knot : float
-      Center knot is the divider on the outer surface that corresponds to the 
-      connection point between the quarter circle and the straight edge of the 
+      Center knot is the divider on the outer surface that corresponds to the
+      connection point between the quarter circle and the straight edge of the
       inner surface
-    die_outer_radius : float 
+    die_outer_radius : float
       Outer radius of the geometry
     total_slit_length : float
       Length of the slit including the quarter circle
@@ -66,36 +66,41 @@ def create_volumetric_die(
 
     def conjoin_splines(start_spline, end_spline):
         # Make sure that the control points and knots match
-        assert (start_spline.para_dim == end_spline.para_dim)
-        assert (start_spline.para_dim == 1)
-        assert (start_spline.degrees[0] == end_spline.degrees[0])
-        assert (np.allclose(start_spline.cps[-1, :], end_spline.cps[0, :]))
-        assert (np.allclose(
-            start_spline.kvs[0][-start_spline.degrees[0]:],
-            end_spline.kvs[0][:end_spline.degrees[0]]))
+        assert start_spline.para_dim == end_spline.para_dim
+        assert start_spline.para_dim == 1
+        assert start_spline.degrees[0] == end_spline.degrees[0]
+        assert np.allclose(start_spline.cps[-1, :], end_spline.cps[0, :])
+        assert np.allclose(
+            start_spline.kvs[0][-start_spline.degrees[0] :],
+            end_spline.kvs[0][: end_spline.degrees[0]],
+        )
 
         # Join the splines
         return spp.BSpline(
             degrees=start_spline.degrees,
-            knot_vectors=[[
-                *start_spline.kvs[0][:-start_spline.degrees[0]],
-                *end_spline.kvs[0][end_spline.degrees[0]:]
-            ]],
-            control_points=np.vstack((
-                start_spline.cps[:-1, :],
-                end_spline.cps
-            ))
+            knot_vectors=[
+                [
+                    *start_spline.kvs[0][: -start_spline.degrees[0]],
+                    *end_spline.kvs[0][end_spline.degrees[0] :],
+                ]
+            ],
+            control_points=np.vstack(
+                (start_spline.cps[:-1, :], end_spline.cps)
+            ),
         )
 
     # Create the outer geometry
     outer_arc_nurbs = spp.helpme.create.arc(
-        radius=die_outer_radius, degree=True, angle=90, n_knot_spans=1).nurbs.create.embedded(3)
+        radius=die_outer_radius, degree=True, angle=90, n_knot_spans=1
+    ).nurbs.create.embedded(3)
 
     # Insert the knots and refine once with double knots for C0 continuity
     outer_arc_nurbs.insert_knots(
-        0, [center_knot/2, center_knot, (1 + center_knot)/2])
+        0, [center_knot / 2, center_knot, (1 + center_knot) / 2]
+    )
     outer_arc_nurbs.insert_knots(
-        0, [center_knot/2, center_knot, (1 + center_knot)/2])
+        0, [center_knot / 2, center_knot, (1 + center_knot) / 2]
+    )
 
     # Strip it of the weights
     outer_arc_nurbs_dict = outer_arc_nurbs.todict()
@@ -110,7 +115,7 @@ def create_volumetric_die(
         control_points=[
             [straight_line_length, half_slit_height],
             [0, half_slit_height],
-        ]
+        ],
     ).bspline.create.embedded(3)
     straight_line_outlet.elevate_degrees([0])
     straight_line_outlet.insert_knots(0, [0.5, 0.5])
@@ -118,7 +123,8 @@ def create_volumetric_die(
 
     # Create the inner arc geometry
     inner_arc_outlet_nurbs = spp.helpme.create.arc(
-        radius=half_slit_height, degree=True, angle=90, n_knot_spans=1).nurbs.create.embedded(3)
+        radius=half_slit_height, degree=True, angle=90, n_knot_spans=1
+    ).nurbs.create.embedded(3)
     inner_arc_outlet_nurbs.cps[:, 0] += straight_line_length
 
     # Insert the knots and refine once with double knots for C0 continuity
@@ -132,7 +138,8 @@ def create_volumetric_die(
 
     # inner boundary
     inner_curve_outlet = conjoin_splines(
-        inner_arc_outlet, straight_line_outlet)
+        inner_arc_outlet, straight_line_outlet
+    )
 
     # Second Layer
     # Create the three lines that define the inner geometry
@@ -144,7 +151,7 @@ def create_volumetric_die(
         control_points=[
             [straight_line_length_m, half_slit_height_m, half_depth],
             [0, half_slit_height_m, half_depth],
-        ]
+        ],
     ).bspline
     straight_line_m.elevate_degrees([0])
     straight_line_m.insert_knots(0, [0.5, 0.5])
@@ -152,7 +159,8 @@ def create_volumetric_die(
 
     # Create the inner arc geometry
     inner_arc_m_nurbs = spp.helpme.create.arc(
-        radius=half_slit_height_m, degree=True, angle=90, n_knot_spans=1).nurbs.create.embedded(3)
+        radius=half_slit_height_m, degree=True, angle=90, n_knot_spans=1
+    ).nurbs.create.embedded(3)
     inner_arc_m_nurbs.cps[:] += [straight_line_length_m, 0, half_depth]
 
     # Insert the knots and refine once with double knots for C0 continuity
@@ -165,8 +173,7 @@ def create_volumetric_die(
     inner_arc_m = spp.BSpline(**inner_arc_m_dict)
 
     # inner boundary
-    inner_curve_m = conjoin_splines(
-        inner_arc_m, straight_line_m)
+    inner_curve_m = conjoin_splines(inner_arc_m, straight_line_m)
 
     # Outer arc in the center
     outer_arc_m = outer_arc.copy()
@@ -179,7 +186,7 @@ def create_volumetric_die(
     # Inlet arc
     inner_arc_inlet = outer_arc.copy()
     inner_arc_inlet.cps[:, 2] += total_depth
-    inner_arc_inlet.cps[:, :2] *= inlet_radius/die_outer_radius
+    inner_arc_inlet.cps[:, :2] *= inlet_radius / die_outer_radius
 
     # Combine all spline curves into a trivariate
     slit_profile = spp.BSpline(
@@ -187,16 +194,18 @@ def create_volumetric_die(
         knot_vectors=[
             outer_arc_inlet.kvs[0],
             [0, 0, 1, 1],
-            [0, 0, 0, 1, 1, 1]
+            [0, 0, 0, 1, 1, 1],
         ],
-        control_points=np.vstack((
-            inner_curve_outlet.cps,
-            outer_arc.cps,
-            inner_curve_m.cps,
-            outer_arc_m.cps,
-            inner_arc_inlet.cps,
-            outer_arc_inlet.cps,
-        ))
+        control_points=np.vstack(
+            (
+                inner_curve_outlet.cps,
+                outer_arc.cps,
+                inner_curve_m.cps,
+                outer_arc_m.cps,
+                inner_arc_inlet.cps,
+                outer_arc_inlet.cps,
+            )
+        ),
     )
     spp.helpme.reparametrize.permute_parametric_axes(slit_profile, [0, 2, 1])
 

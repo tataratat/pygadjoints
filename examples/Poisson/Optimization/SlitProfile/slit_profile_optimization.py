@@ -112,7 +112,7 @@ class Optimizer:
         macro_ctps=None,
         parameter_default_value=0.1,
         volume_scaling=1,
-        micro_structure_keys=None
+        micro_structure_keys=None,
     ):
         self.parameter_default_value = parameter_default_value
         self.n_refinements = n_refinements
@@ -135,7 +135,9 @@ class Optimizer:
         self.max_volume = max_volume
         self.macro_ctps = macro_ctps
         self._volume_scaling = volume_scaling
-        self._ms_keys = dict() if micro_structure_keys is None else micro_structure_keys
+        self._ms_keys = (
+            dict() if micro_structure_keys is None else micro_structure_keys
+        )
 
     def prepare_microstructure(self):
         def parametrization_function(x):
@@ -184,8 +186,9 @@ class Optimizer:
             return identifier_function
 
         multipatch = generator.create(
-            contact_length=0.5, macro_sensitivities=len(self.macro_ctps) > 0,
-            **self._ms_keys
+            contact_length=0.5,
+            macro_sensitivities=len(self.macro_ctps) > 0,
+            **self._ms_keys,
         )
 
         # Reuse existing interfaces
@@ -231,7 +234,7 @@ class Optimizer:
             : self.para_spline.cps.shape[0]
         ].reshape(-1, 1)
         self.macro_spline.cps.ravel()[self.macro_ctps] = (
-            parameters[self.para_spline.cps.shape[0]:]
+            parameters[self.para_spline.cps.shape[0] :]
             + self.macro_spline_original.cps.ravel()[self.macro_ctps]
         )
         self.prepare_microstructure()
@@ -331,7 +334,10 @@ class Optimizer:
 
     def volume_deriv(self, parameters):
         self.ensure_parameters(parameters)
-        sensi = -self.diffusion_solver.volume_deris_wrt_ctps() * self._volume_scaling
+        sensi = (
+            -self.diffusion_solver.volume_deris_wrt_ctps()
+            * self._volume_scaling
+        )
 
         # Write into logfile
         with open("log_file_volume_sensitivities.csv", "a") as file1:
@@ -339,7 +345,9 @@ class Optimizer:
                 ", ".join(
                     str(a)
                     for a in (
-                        [self.iteration] + [-sensi] + parameters.tolist()
+                        [self.iteration]
+                        + -sensi.tolist()
+                        + parameters.tolist()
                     )
                 )
                 + "\n"
@@ -397,8 +405,7 @@ def main():
     # pygdjoints)
 
     # Geometry definition
-    tiles_with_load = 0
-    tiling = [1, 3, 3]  # [3,9,9]
+    tiling = [2, 3, 3]  # [3,9,9]
     parameter_spline_degrees = [1, 1, 1]
     parameter_spline_cps_dimensions = [4, 2, 2]
     parameter_default_value = 0.125
@@ -411,7 +418,6 @@ def main():
     parameter_spline = sp.BSpline(
         degrees=parameter_spline_degrees,
         knot_vectors=[
-
             (
                 [0] * parameter_spline_degrees[i]
                 + np.linspace(
@@ -422,7 +428,8 @@ def main():
                     + 1,
                 ).tolist()
                 + [1] * parameter_spline_degrees[i]
-            ) for i in range(len(parameter_spline_degrees))
+            )
+            for i in range(len(parameter_spline_degrees))
         ],
         control_points=np.ones((np.prod(parameter_spline_cps_dimensions), 1))
         * parameter_default_value,
@@ -458,7 +465,7 @@ def main():
         macro_ctps=[],
         parameter_default_value=parameter_default_value,
         volume_scaling=volume_scaling,
-        micro_structure_keys={"center_expansion": 1.2, "closing_face": "z"}
+        micro_structure_keys={"center_expansion": 1.2, "closing_face": "z"},
     )
 
     # Try some parameters

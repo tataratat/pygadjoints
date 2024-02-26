@@ -26,8 +26,8 @@ class DiffusionProblem {
   typedef gsExprAssembler<>::space space;
   typedef gsExprAssembler<>::solution solution;
 
-  using SolverType = gsSparseSolver<>::CGDiagonal;
-  // using SolverType = gsSparseSolver<>::BiCGSTABILUT;
+  // using SolverType = gsSparseSolver<>::CGDiagonal;
+  using SolverType = gsSparseSolver<>::BiCGSTABILUT;
 
 public:
   DiffusionProblem() : expr_assembler_pde(1, 1) {
@@ -301,19 +301,37 @@ public:
 
   py::array_t<double> ComputeVolumeDerivativeToCTPS() {
     const Timer timer("ComputeVolumeDerivativeToCTPS");
-    // Compute the derivative of the volume of the domain with respect to
-    // the control points Auxiliary expressions
+
+    auto meas_expr = meas(*geometry_expression_ptr); // validated
     const space &basis_function = *basis_function_ptr;
-    auto jacobian = jac(*geometry_expression_ptr);      // validated
-    auto inv_jacs = jacobian.ginv();                    // validated
-    auto meas_expr = meas(*geometry_expression_ptr);    // validated
-    auto djacdc = jac(basis_function);                  // validated
-    auto aux_expr = (djacdc * inv_jacs).tr();           // validated
-    auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
-    expr_assembler_pde.assemble(meas_expr_dx.tr());
+    auto jacobian = jac(*geometry_expression_ptr); // validated
+    auto inv_jacs = jacobian.ginv();               // validated
+
+    // Initialize return value
+    const int number_of_ctp_dofs{expr_assembler_pde.numDofs()};
+    gsMatrix<double> sensitivities_wrt_ctps(1, dimensionality_ *
+                                                   number_of_ctp_dofs);
+
+    for (index_t i_dimension{0}; i_dimension < dimensionality_; i_dimension++) {
+      Timer iteration_timer(" -> Assembling iteration : " +
+                            std::to_string(i_dimension));
+      // Calculate local entities
+      auto djacdc = dJacdc(basis_function, i_dimension);
+      auto aux_expr = (djacdc.tr().cwisetr() * inv_jacs); // validated
+
+      auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
+
+      // Compute the derivative of the volume of the domain with respect to
+      // the control points Auxiliary expressions
+      expr_assembler_pde.assemble(meas_expr_dx.tr());
+      sensitivities_wrt_ctps.block(0, i_dimension * number_of_ctp_dofs, 1,
+                                   number_of_ctp_dofs) =
+          expr_assembler_pde.rhs().transpose();
+      expr_assembler_pde.clearRhs();
+    }
 
     const auto volume_deriv =
-        expr_assembler_pde.rhs().transpose() * (*ctps_sensitivities_matrix_ptr);
+        sensitivities_wrt_ctps * (*ctps_sensitivities_matrix_ptr);
 
     py::array_t<double> derivative(volume_deriv.size());
     double *derivative_ptr = static_cast<double *>(derivative.request().ptr);
@@ -403,9 +421,9 @@ public:
     gsMatrix<double> sensitivities_wrt_ctps(1, dimensionality_ *
                                                    number_of_ctp_dofs);
 
-    // if (!(ctps_sensitivities_matrix_ptr)) {
-    //   throw std::runtime_error("CTPS Matrix has not been computed yet.");
-    // }
+    if (!(ctps_sensitivities_matrix_ptr)) {
+      throw std::runtime_error("CTPS Matrix has not been computed yet.");
+    }
 
     // Auxiliary references
     const geometryMap &geometric_mapping = *geometry_expression_ptr;
@@ -435,7 +453,7 @@ public:
       auto djacdc = dJacdc(basis_function, i_dimension);
       auto aux_expr = (djacdc.tr().cwisetr() * inv_jacs); // validated
 
-      auto meas_expr_dx = meas_expr * (aux_expr).trace(); // NEEDS VALIDATION
+      auto meas_expr_dx = meas_expr * (aux_expr).trace(); // validated
 
       // Original Forms
       auto i_grad_of_solution =
@@ -492,14 +510,14 @@ public:
 
     // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled
     const auto sensitivities =
-        ((lagrange_multipliers_ptr->transpose() * expr_assembler_pde.matrix()));
+        sensitivities_wrt_ctps * (*ctps_sensitivities_matrix_ptr);
 
     // Write eigen matrix into a py::array
-    py::array_t<double> sensitivities_py(sensitivities_wrt_ctps.size());
+    py::array_t<double> sensitivities_py(sensitivities.size());
     double *sensitivities_py_ptr =
         static_cast<double *>(sensitivities_py.request().ptr);
-    for (int i{}; i < sensitivities_wrt_ctps.size(); i++) {
-      sensitivities_py_ptr[i] = sensitivities_wrt_ctps(0, i);
+    for (int i{}; i < sensitivities.size(); i++) {
+      sensitivities_py_ptr[i] = sensitivities(0, i);
     }
 
     // Clear for future evaluations
