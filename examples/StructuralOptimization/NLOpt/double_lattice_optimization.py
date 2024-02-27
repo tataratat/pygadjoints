@@ -151,7 +151,7 @@ class Optimizer:
                 self.get_filename(), topology_changes=False
             )
             self.linear_solver.read_control_point_sensitivities(
-            self.get_filename() + ".fields.xml"
+                self.get_filename() + ".fields.xml"
             )
             self.last_parameters = parameters.copy()
             # self.linear_solver.read_from_input_file(self.get_filename())
@@ -242,6 +242,7 @@ class Optimizer:
                 )
                 + "\n"
             )
+
         return self.max_volume - volume
 
     def volume_deriv(self, parameters):
@@ -289,7 +290,7 @@ class Optimizer:
         #     method="SLSQP",
         #     jac=self.evaluate_jacobian,
         #     bounds=(
-        #         [(0.0111, 0.249) for _ in range(n_design_vars_para)]
+        #         [(0.0111, 0.206) for _ in range(n_design_vars_para)]
         #         + [(-1.5, 1.5) for _ in range(n_design_vars_macro)]
         #     ),
         #     constraints=self.constraint(),
@@ -298,20 +299,20 @@ class Optimizer:
         # final_params = optim.x
 
         opt_nl = nlopt.opt(
-            nlopt.LD_MMA,
-            (n_design_vars_macro + n_design_vars_para)
+            nlopt.LD_SLSQP,
+            (n_design_vars_para + n_design_vars_macro)
         )
         opt_nl.set_lower_bounds(
-            [0.02 for _ in range(n_design_vars_para)]
+            [0.0111 for _ in range(n_design_vars_para)]
             + [-1.5 for _ in range(n_design_vars_macro)]
         )
         opt_nl.set_upper_bounds(
-            [0.249 for _ in range(n_design_vars_para)]
+            [0.206 for _ in range(n_design_vars_para)]
             + [1.5 for _ in range(n_design_vars_macro)]
         )
         opt_nl.set_min_objective(self.objective_function_nlopt)
         opt_nl.add_inequality_constraint(self.constraint_nlopt, 1e-8)
-        opt_nl.set_ftol_rel(1e-4)
+        opt_nl.set_ftol_rel(1e-6)
         final_params = opt_nl.optimize(initial_guess)
 
         # Finalize
@@ -334,9 +335,9 @@ def main():
     # pygdjoints)
 
     # Geometry definition
-    tiling = [5, 13]
+    tiling = [6, 24]
     parameter_spline_degrees = [1, 1]
-    parameter_spline_cps_dimensions = [3, 9]
+    parameter_spline_cps_dimensions = [5, 13]
     parameter_default_value = 0.2
 
     scaling_factor_objective_function = 1e-3
@@ -375,6 +376,7 @@ def main():
     )
 
     # Function for neumann boundary
+
     def identifier_function_neumann(x):
         pass
 
@@ -403,7 +405,7 @@ def main():
         n_threads=32,
         write_logfiles=write_logfiles,
         max_volume=3.0,
-        macro_ctps=[4, 5, 6, 7], #[2, 3, 8, 9],
+        macro_ctps=[4, 5, 6, 7],
         parameter_default_value=parameter_default_value,
     )
 
