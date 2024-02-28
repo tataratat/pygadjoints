@@ -428,7 +428,6 @@ public:
     // Auxiliary references
     const geometryMap &geometric_mapping = *geometry_expression_ptr;
     const space &basis_function = *basis_function_ptr;
-    const space &geometry_basis_function = *geometry_function_space_ptr;
     const solution &solution_expression = *solution_expression_ptr;
 
     ////////////////////////////////
@@ -525,27 +524,6 @@ public:
     expr_assembler_pde.clearRhs();
 
     return sensitivities_py;
-
-    // ///////////////////////////
-    // // Compute sensitivities //
-    // ///////////////////////////
-
-    // if ((objective_function_ == ObjectiveFunction::compliance) &&
-    //     (has_source_id)) {
-    //   // Partial derivative of the objective function with respect to the
-    //   // control points
-    //   expr_assembler_pde.assemble(
-    //       (solution_expression.cwisetr() *
-    //        expr_assembler_pde.getCoeff(source_function,
-    //        geometric_mapping) * meas_expr_dx)
-    //           .tr());
-    // }
-    // // Assumes expr_assembler_pde.rhs() returns 0 when nothing is
-    // assembled const auto sensitivities =
-    // (expr_assembler_pde.rhs().transpose() +
-    //                             (lagrange_multipliers_ptr->transpose() *
-    //                              expr_assembler_pde.matrix())) *
-    //                            (*ctps_sensitivities_matrix_ptr);
   }
 
   void
