@@ -110,13 +110,11 @@ class Optimizer:
         microtile,
         para_spline,
         identifier_function_neumann,
-        n_threads=12,
         tiling=[24, 12],
         scaling_factor_objective_function=100,
         n_refinements=1,
         write_logfiles=False,
         max_volume=1.5,
-        objective_function_type=1,
         macro_ctps=None,
         parameter_default_value=0.1,
         volume_scaling=1,
@@ -135,8 +133,7 @@ class Optimizer:
             scaling_factor_objective_function
         )
         self.diffusion_solver = pygadjoints.DiffusionProblem()
-        self.diffusion_solver.set_number_of_threads(n_threads)
-        # self.diffusion_solver.set_objective_function(objective_function_type)
+        self.diffusion_solver.set_number_of_threads(sp.settings.NTHREADS)
         self.last_parameters = None
         self.iteration = 0
         self.write_logfiles = write_logfiles
@@ -423,6 +420,8 @@ def main():
 
     scaling_factor_objective_function = 1e-2
 
+    sp.settings.NTHREADS = 12
+
     write_logfiles = True
 
     # Create parameters spline
@@ -470,7 +469,6 @@ def main():
         tiling=tiling,
         scaling_factor_objective_function=scaling_factor_objective_function,
         n_refinements=0,
-        n_threads=4,
         write_logfiles=write_logfiles,
         max_volume=0.5,
         macro_ctps=[],
