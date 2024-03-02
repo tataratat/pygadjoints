@@ -18,8 +18,10 @@ void add_diffusion_problem(py::module_ &m) {
 
       // IO routines
       .def("read_control_point_sensitivities",
-           &pygadjoints::DiffusionProblem::GetParameterSensitivities,
+           &pygadjoints::DiffusionProblem::ReadParameterSensitivities,
            py::arg("fname"))
+      .def("get_control_point_sensitivities",
+           &pygadjoints::DiffusionProblem::GetParameterSensitivities)
       .def("update_geometry", &pygadjoints::DiffusionProblem::UpdateGeometry,
            py::arg("fname"), py::arg("topology_changes"))
       .def("export_paraview", &pygadjoints::DiffusionProblem::ExportParaview,

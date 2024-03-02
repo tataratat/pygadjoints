@@ -57,6 +57,7 @@ public:
    */
   void ExportParaview(const std::string &fname, const bool &plot_elements,
                       const int &sample_rate, const bool &export_b64) {
+    Timer timer("Exporting Paraview");
     // Generate Paraview File
     gsParaviewCollection collection("ParaviewOutput/" + fname,
                                     expr_evaluator_ptr.get());
@@ -222,7 +223,9 @@ public:
                 << padding << "Number of patches :\t\t" << mp_pde.nPatches()
                 << "\n"
                 << padding << "Minimum spline degree: \t"
-                << function_basis.minCwiseDegree() << std::endl;
+                << function_basis.minCwiseDegree() << padding
+                << "Maximum spline degree: \t"
+                << function_basis.maxCwiseDegree() << std::endl;
 
       boundary_conditions.print(std::cout, true);
 
@@ -421,10 +424,6 @@ public:
     gsMatrix<double> sensitivities_wrt_ctps(1, dimensionality_ *
                                                    number_of_ctp_dofs);
 
-    if (!(ctps_sensitivities_matrix_ptr)) {
-      throw std::runtime_error("CTPS Matrix has not been computed yet.");
-    }
-
     // Auxiliary references
     const geometryMap &geometric_mapping = *geometry_expression_ptr;
     const space &basis_function = *basis_function_ptr;
@@ -507,16 +506,12 @@ public:
       }
     }
 
-    // Assumes expr_assembler_pde.rhs() returns 0 when nothing is assembled
-    const auto sensitivities =
-        sensitivities_wrt_ctps * (*ctps_sensitivities_matrix_ptr);
-
     // Write eigen matrix into a py::array
-    py::array_t<double> sensitivities_py(sensitivities.size());
+    py::array_t<double> sensitivities_py(sensitivities_wrt_ctps.size());
     double *sensitivities_py_ptr =
         static_cast<double *>(sensitivities_py.request().ptr);
-    for (int i{}; i < sensitivities.size(); i++) {
-      sensitivities_py_ptr[i] = sensitivities(0, i);
+    for (int i{}; i < sensitivities_wrt_ctps.size(); i++) {
+      sensitivities_py_ptr[i] = sensitivities_wrt_ctps(0, i);
     }
 
     // Clear for future evaluations
@@ -526,8 +521,8 @@ public:
     return sensitivities_py;
   }
 
-  void
-  GetParameterSensitivities(std::string filename // Filename for parametrization
+  void ReadParameterSensitivities(
+      std::string filename // Filename for parametrization
   ) {
     const Timer timer("GetParameterSensitivities");
     gsFileData<> fd(filename);
@@ -552,9 +547,13 @@ public:
 
     // Start the assignment
     const size_t totalSz = dof_mapper_ptr->freeSize();
-    ctps_sensitivities_matrix_ptr = std::make_shared<gsMatrix<>>();
-    ctps_sensitivities_matrix_ptr->resize(totalSz * dimensionality_,
-                                          design_dimension);
+    if (!ctps_sensitivities_matrix_ptr) {
+      ctps_sensitivities_matrix_ptr = std::make_shared<gsMatrix<>>();
+      ctps_sensitivities_matrix_ptr->resize(totalSz * dimensionality_,
+                                            design_dimension);
+    }
+    // Reinit to zero
+    (*ctps_sensitivities_matrix_ptr) *= 0.;
 
     // Rough overestimate to avoid realloations
     for (int patch_support{}; patch_support < patch_supports.rows();
@@ -575,6 +574,24 @@ public:
         }
       }
     }
+  }
+
+  py::array_t<double> GetParameterSensitivities() {
+    if (!ctps_sensitivities_matrix_ptr) {
+      throw std::runtime_error("CTPS Matrix has not been computed yet.");
+    }
+
+    const int _rows = ctps_sensitivities_matrix_ptr->rows();
+    const int _cols = ctps_sensitivities_matrix_ptr->cols();
+    py::array_t<double> matrix(_rows * _cols);
+    double *matrix_ptr = static_cast<double *>(matrix.request().ptr);
+    for (int i{}; i < _rows; i++) {
+      for (int j{}; j < _cols; j++) {
+        matrix_ptr[i * _cols + j] = (*ctps_sensitivities_matrix_ptr)(i, j);
+      }
+    }
+    matrix.resize({_rows, _cols});
+    return matrix;
   }
 
   void UpdateGeometry(const std::string &fname, const bool &topology_changes) {
