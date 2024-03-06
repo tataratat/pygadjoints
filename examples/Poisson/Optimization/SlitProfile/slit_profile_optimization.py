@@ -7,11 +7,16 @@ from create_macro_geometry import (
 
 import pygadjoints
 
+###
+# SIMULATION PARAMETERS
+###
 ULTRA_VERBOSE = True
-INVALID_ID = 1999
 N_THREAD = 4
 
-
+###
+# MATERIAL PARAMETERS
+###
+ACTIVATE_SOURCE_FUNCTION = False
 thermal_conductivity = 20
 density_ = 7850
 thermal_capacity_ = 420
@@ -30,7 +35,7 @@ GISMO_OPTIONS = [
         "tag": "Function",
         "attributes": {
             "type": "FunctionExpr",
-            "id": "{INVALID_ID}",
+            "id": f"{1}",
             "dim": f"{dim}",
         },
         "text": "0.",
@@ -106,6 +111,10 @@ GISMO_OPTIONS[1]["children"].append(
         },
     }
 )
+
+if not ACTIVATE_SOURCE_FUNCTION:
+    GISMO_OPTIONS.pop(0)
+
 
 # for i in range(1, 8):
 #     GISMO_OPTIONS[1]["children"].append(
@@ -194,25 +203,16 @@ class Optimizer:
         def identifier_function(deformation_function, face_id):
             boundary_spline = deformation_function.extract.boundaries()[
                 face_id
-            ].extract.beziers()
+            ]
 
             def identifier_function(x):
-                distance_2_boundary = np.hstack(
-                    [
-                        b.proximities(
-                            queries=x,
-                            initial_guess_sample_resolutions=(
-                                [11] * b.para_dim
-                            ),
-                            # max_iterations=0,
-                            tolerance=1e-12,
-                            return_verbose=True,
-                            # aggressive_search_bounds=True
-                        )[3]
-                        for b in boundary_spline
-                    ]
-                )
-                return np.any(distance_2_boundary < 1e-5, axis=1).flatten()
+                distance_2_boundary = boundary_spline.proximities(
+                    queries=x,
+                    initial_guess_sample_resolutions=[4],
+                    tolerance=1e-9,
+                    return_verbose=True,
+                )[3]
+                return distance_2_boundary.flatten() < 1e-8
 
             return identifier_function
 
@@ -221,12 +221,11 @@ class Optimizer:
             macro_sensitivities=len(self.macro_ctps) > 0,
             **self._ms_keys,
         )
-        # multipatch.show(resolutions=5, knots=False, control_points=False)
 
         # Reuse existing interfaces
         if self.interfaces is None:
             multipatch.determine_interfaces()
-            print("Number of coefficients")
+            print("Number of control-points in geometry")
             print(np.sum([s.cps.shape[0] for s in multipatch.patches]))
             for i in range(self.macro_spline.dim * 2):
                 multipatch.boundary_from_function(
@@ -266,7 +265,7 @@ class Optimizer:
             : self.para_spline.cps.shape[0]
         ].reshape(-1, 1)
         self.macro_spline.cps.ravel()[self.macro_ctps] = (
-            parameters[self.para_spline.cps.shape[0] :]
+            parameters[self.para_spline.cps.shape[0]:]
             + self.macro_spline_original.cps.ravel()[self.macro_ctps]
         )
         self.prepare_microstructure()
@@ -293,8 +292,6 @@ class Optimizer:
                 self.diffusion_solver.get_control_point_sensitivities()
             )
             self.last_parameters = parameters.copy()
-            # self.diffusion_solver.read_from_input_file(self.get_filename())
-            self.last_parameters = parameters.copy()
 
         # Notify iteration evaluator
         self.current_objective_function_value = None
@@ -315,7 +312,6 @@ class Optimizer:
 
         #
         if ULTRA_VERBOSE:
-            print("PARAVIEW GO GO GO GO")
             self.diffusion_solver.export_paraview(
                 "solution", False, 1000, True
             )
