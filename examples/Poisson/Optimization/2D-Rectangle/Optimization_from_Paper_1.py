@@ -8,7 +8,6 @@ import pygadjoints
 # SIMULATION PARAMETERS
 ###
 ULTRA_VERBOSE = True
-INVALID_ID = 1999
 N_THREAD = 4
 
 ###

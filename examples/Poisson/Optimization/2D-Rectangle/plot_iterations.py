@@ -6,14 +6,15 @@ try:
     volumes = np.genfromtxt("log_file_volume.csv", delimiter=",")
     has_volumes = True
     max_plots = 4
-except:
+except Exception:
     has_volumes = False
     max_plots = 3
 
 sensitivities = np.genfromtxt("log_file_sensitivities.csv", delimiter=",")
 steps_with_sensitivities = sensitivities[:, 0].astype(np.int64) - 1
 step_size_sensitivities = step_size = np.linalg.norm(
-    np.diff(iterations[steps_with_sensitivities, 2:], axis=0), axis=1)
+    np.diff(iterations[steps_with_sensitivities, 2:], axis=0), axis=1
+)
 
 #
 n_params = int((sensitivities.shape[1] - 2) / 2)
@@ -36,9 +37,10 @@ step_size = np.linalg.norm(np.diff(iterations[:, 2:], axis=0), axis=1)
 
 
 plt.subplot(max_plots, 1, 2)
-plt.semilogy(iterations[:-1, 0].ravel()+0.5, step_size, [0], "-x")
-plt.semilogy(sensitivities[:-1, 0].ravel()+0.5,
-             step_size_sensitivities.flat, "o")
+plt.semilogy(iterations[:-1, 0].ravel() + 0.5, step_size, [0], "-x")
+plt.semilogy(
+    sensitivities[:-1, 0].ravel() + 0.5, step_size_sensitivities.flat, "o"
+)
 plt.xticks(list(range(0, max_iter, major_grid_x)))
 plt.xlim((0, max_iter))
 plt.xlabel("Iteration")
@@ -47,7 +49,7 @@ plt.ylabel("Step size")
 plt.subplot(max_plots, 1, 3)
 plt.plot(
     sensitivities[:, 0],
-    np.linalg.norm(sensitivities[:, 2: (2 + n_params)], axis=1),
+    np.linalg.norm(sensitivities[:, 2 : (2 + n_params)], axis=1),
     "-x",
 )
 plt.xticks(list(range(0, max_iter, major_grid_x)))
