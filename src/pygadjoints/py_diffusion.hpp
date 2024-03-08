@@ -333,13 +333,10 @@ public:
       expr_assembler_pde.clearRhs();
     }
 
-    const auto volume_deriv =
-        sensitivities_wrt_ctps * (*ctps_sensitivities_matrix_ptr);
-
-    py::array_t<double> derivative(volume_deriv.size());
+    py::array_t<double> derivative(sensitivities_wrt_ctps.size());
     double *derivative_ptr = static_cast<double *>(derivative.request().ptr);
-    for (int i{}; i < volume_deriv.size(); i++) {
-      derivative_ptr[i] = volume_deriv(0, i);
+    for (int i{}; i < sensitivities_wrt_ctps.size(); i++) {
+      derivative_ptr[i] = sensitivities_wrt_ctps(0, i);
     }
     return derivative;
   }
@@ -568,8 +565,9 @@ public:
           for (index_t k_dim = 0; k_dim != dimensionality_; k_dim++) {
             ctps_sensitivities_matrix_ptr->operator()(
                 global_id + k_dim * totalSz, i_design) =
-                static_cast<double>(mp.patch(j_patch).coef(
-                    l_dof, k_index_offset * dimensionality_));
+                // static_cast<double>
+                (mp.patch(j_patch).coef(l_dof,
+                                        k_index_offset * dimensionality_));
           }
         }
       }
