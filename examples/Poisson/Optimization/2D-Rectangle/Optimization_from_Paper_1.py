@@ -1,5 +1,7 @@
+from time import time
+
+import nlopt
 import numpy as np
-import scipy
 import splinepy as sp
 
 import pygadjoints
@@ -394,6 +396,24 @@ class Optimizer:
     def finalize(self):
         self.diffusion_solver.export_paraview("solution", False, 20**2, True)
 
+    def objective_function_nlopt(self, parameters, grad):
+        obj = self.evaluate_iteration(parameters=parameters)
+        if grad.size > 0:
+            # gradient = self.evaluate_jacobian(parameters=parameters)
+            # grad[:] = gradient / np.linalg.norm(gradient)
+            grad[:] = self.evaluate_jacobian(parameters=parameters)
+
+        return obj
+
+    def constraint_nlopt(self, parameters, grad):
+        vol = -self.volume(parameters=parameters)
+        if grad.size > 0:
+            # gradient = -self.volume_deriv(parameters=parameters)
+            # grad[:] = gradient / np.linalg.norm(gradient)
+            grad[:] = -self.volume_deriv(parameters=parameters)
+
+        return vol
+
     def optimize(self):
         # Initialize the optimization
         n_design_vars_para = self.para_spline.cps.size
@@ -405,30 +425,63 @@ class Optimizer:
             * self.parameter_scaling
         )
         initial_guess[n_design_vars_para:] = 0
+        t_s = time()
 
-        optim = scipy.optimize.minimize(
-            self.evaluate_iteration,
-            initial_guess.ravel(),
-            method="SLSQP",
-            jac=self.evaluate_jacobian,
-            bounds=(
-                [
-                    (
-                        0.01111 * self.parameter_scaling,
-                        0.249 * self.parameter_scaling,
-                    )
-                    for _ in range(n_design_vars_para)
-                ]
-                + [(-0.5, 0.5) for _ in range(n_design_vars_macro)]
-            ),
-            # constraints=self.constraint(),
-            options={"disp": True},
+        # optim = scipy.optimize.minimize(
+        #     self.evaluate_iteration,
+        #     initial_guess.ravel(),
+        #     method="SLSQP",
+        #     jac=self.evaluate_jacobian,
+        #     bounds=(
+        #         [
+        #             (
+        #                 0.01111 * self.parameter_scaling,
+        #                 0.249 * self.parameter_scaling,
+        #             )
+        #             for _ in range(n_design_vars_para)
+        #         ]
+        #         + [(-0.5, 0.5) for _ in range(n_design_vars_macro)]
+        #     ),
+        #     # constraints=self.constraint(),
+        #     options={
+        #         "disp": True,
+        #         "ftol": 1e-5,
+        #         },
+        # )
+        # t = time() - t_s
+        # opt_paras = optim.x
+        # opt_obj = optim.fun
+        # opt_fevals = optim.nfev
+
+        optim = nlopt.opt(
+            nlopt.LD_SLSQP, n_design_vars_macro + n_design_vars_para
         )
+        optim.set_min_objective(self.objective_function_nlopt)
+        # optim.add_inequality_constraint(self.constraint_nlopt, 1e-8)
+        optim.set_ftol_abs(1e-5)
+        optim.set_lower_bounds(
+            [0.0111 * self.parameter_scaling] * n_design_vars_para
+            + [-0.5] * n_design_vars_macro
+        )
+        optim.set_upper_bounds(
+            [0.249 * self.parameter_scaling] * n_design_vars_para
+            + [0.5] * n_design_vars_macro
+        )
+        opt_paras = optim.optimize(initial_guess)
+        t = time() - t_s
+        opt_obj = optim.last_optimum_value()
+        opt_fevals = optim.get_numevals()
+        print("NLOPT Termination Code: ", optim.last_optimize_result())
+
         # Finalize
         self.finalize()
-        print("Best Parameters : ")
-        print(optim.x)
-        print(optim)
+        print("Best Parameters:")
+        print(opt_paras)
+        print("Objective Function Value:")
+        print(opt_obj)
+        print("Function Evaluations:")
+        print(opt_fevals)
+        print("Duration : ", t)
 
     def get_filename(self):
         return (
@@ -452,7 +505,7 @@ def main():
 
     scaling_factor_objective_function = 1 / 66.0
     parameter_scaling_value = 10
-    n_refinemenets = 2
+    n_refinemenets = 1
 
     sp.settings.NTHREADS = 1
 
@@ -506,7 +559,7 @@ def main():
         scaling_factor_objective_function=scaling_factor_objective_function,
         n_refinements=n_refinemenets,
         write_logfiles=write_logfiles,
-        max_volume=0.5,
+        max_volume=4,
         macro_ctps=[],
         parameter_default_value=parameter_default_value,
         volume_scaling=volume_scaling,
