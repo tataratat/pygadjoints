@@ -29,6 +29,9 @@ void add_diffusion_problem(py::module_ &m) {
            py::arg("binary"))
       .def("export_xml", &pygadjoints::DiffusionProblem::ExportXML,
            py::arg("fname"))
+      .def("export_multipatch_object",
+           &pygadjoints::DiffusionProblem::ExportMultipatchSolution,
+           py::arg("fname"))
 
       // Assembly and Solving the linear problem
       .def("assemble", &pygadjoints::DiffusionProblem::Assemble)

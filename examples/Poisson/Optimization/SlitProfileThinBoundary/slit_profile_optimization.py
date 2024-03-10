@@ -227,18 +227,6 @@ class Optimizer:
 
             self.interfaces = multipatch.interfaces
 
-            # Plot boundaries
-            boundaries = []
-            for i_color, boundary in enumerate(multipatch.boundaries):
-                bb = []
-                for i, j in zip(*boundary):
-                    bb.append(multipatch.patches[i].extract.boundaries()[j])
-                boundaries.append(sp.Multipatch(bb))
-                boundaries[-1].show_options["c"] = i_color
-            sp.show(
-                boundaries, control_points=False, knots=False, resolutions=3
-            )
-            quit()
         else:
             multipatch.interfaces = self.interfaces
         sp.io.gismo.export(
@@ -274,7 +262,7 @@ class Optimizer:
             * inverse_scaling
         )
         self.macro_spline.cps.ravel()[self.macro_ctps] = (
-            parameters[self.para_spline.cps.shape[0]:]
+            parameters[self.para_spline.cps.shape[0] :]
             + self.macro_spline_original.cps.ravel()[self.macro_ctps]
         )
         self.prepare_microstructure()
@@ -321,7 +309,7 @@ class Optimizer:
         #
         if self.iteration == 1:
             self.diffusion_solver.export_paraview(
-                "initial", False, 5 ** 3, True
+                "initial", False, 5**3, True
             )
 
         # Write into logfile
@@ -418,18 +406,13 @@ class Optimizer:
         return {"type": "ineq", "fun": self.volume, "jac": self.volume_deriv}
 
     def finalize(self, parameters):
-        self.ensure_parameters(parameters)
-        if self.current_objective_function_value is not None:
-            return self.current_objective_function_value
-
-        # There is no current solution all checks have been performed
+        self.ensure_parameters(parameters, increase_count=False)
         self.diffusion_solver.assemble()
         self.diffusion_solver.solve_linear_system()
-        self.current_objective_function_value = (
-            self.diffusion_solver.objective_function()
-            * self.scaling_factor_objective_function
+        self.diffusion_solver.export_multipatch_object("multipatch_optimized")
+        self.diffusion_solver.export_paraview(
+            "optimized", False, 10**3, True
         )
-        self.diffusion_solver.export_paraview("optimized", False, 10**3, True)
 
     def optimize(self):
         # Initialize the optimization
@@ -490,9 +473,9 @@ def main():
     parameter_spline_cps_dimensions = [4, 2, 2]
     parameter_default_value = 0.12
 
-    scaling_factor_objective_function = 1 / 66.0
+    scaling_factor_objective_function = 1 / 0.3262
     parameter_scaling_value = 10
-    n_refinemenets = 2
+    n_refinemenets = 0
 
     sp.settings.NTHREADS = 1
 
@@ -521,11 +504,14 @@ def main():
 
     # Create Slit Profile geometry
     macro_spline = create_volumetric_die()
-    macro_spline.insert_knots(2, np.linspace(
-        parametric_boundary_thickness,
-        1 - parametric_boundary_thickness,
-        tiling[2]-1
-    ))
+    macro_spline.insert_knots(
+        2,
+        np.linspace(
+            parametric_boundary_thickness,
+            1 - parametric_boundary_thickness,
+            tiling[2] - 1,
+        ),
+    )
     tiling[2] = 1
     volume_scaling = 1
 
@@ -548,7 +534,6 @@ def main():
 
     # Try some parameters
     optimizer.optimize()
-    optimizer.finalize()
 
     exit()
 

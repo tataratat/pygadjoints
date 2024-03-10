@@ -256,7 +256,7 @@ class Optimizer:
             * inverse_scaling
         )
         self.macro_spline.cps.ravel()[self.macro_ctps] = (
-            parameters[self.para_spline.cps.shape[0] :]
+            parameters[self.para_spline.cps.shape[0]:]
             + self.macro_spline_original.cps.ravel()[self.macro_ctps]
         )
         self.prepare_microstructure()
@@ -394,6 +394,7 @@ class Optimizer:
         return {"type": "ineq", "fun": self.volume, "jac": self.volume_deriv}
 
     def finalize(self):
+        self.diffusion_solver.export_multipatch_object("multipatch_solution")
         self.diffusion_solver.export_paraview("solution", False, 20**2, True)
 
     def objective_function_nlopt(self, parameters, grad):
@@ -505,7 +506,7 @@ def main():
 
     scaling_factor_objective_function = 1 / 66.0
     parameter_scaling_value = 10
-    n_refinemenets = 1
+    n_refinemenets = 0
 
     sp.settings.NTHREADS = 1
 

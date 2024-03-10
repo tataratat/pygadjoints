@@ -83,6 +83,22 @@ public:
   }
 
   /**
+   * @brief Export the results as Paraview vtu file
+   *
+   * @param fname Filename
+   * @return void
+   */
+  void ExportMultipatchSolution(const std::string &fname) {
+    Timer timer("Exporting Multipatch-Solution");
+    // Generate Paraview File
+    gsMultiPatch<> mpsol;
+    gsFileData<> output;
+    solution_expression_ptr->extract(mpsol);
+    output << mpsol;
+    output.save(fname + ".xml");
+  }
+
+  /**
    * @brief Export the results in xml file
    *
    * @param fname Filename

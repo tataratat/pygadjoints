@@ -238,6 +238,7 @@ class Optimizer:
             sp.show(
                 boundaries, control_points=False, knots=False, resolutions=3
             )
+            quit()
         else:
             multipatch.interfaces = self.interfaces
         sp.io.gismo.export(
@@ -471,9 +472,10 @@ def main():
 
     # Geometry definition
     tiling = [6, 9, 9]
+    parametric_boundary_thickness = 0.03
     parameter_spline_degrees = [1, 1, 1]
     parameter_spline_cps_dimensions = [6, 3, 3]
-    parameter_default_value = 0.125
+    parameter_default_value = 0.12
 
     scaling_factor_objective_function = 1 / 66.0
     parameter_scaling_value = 10
@@ -506,9 +508,16 @@ def main():
 
     # Create Slit Profile geometry
     macro_spline = create_volumetric_die()
-    volume_scaling = 1 / macro_spline.integrate.volume()
-
-    print(f"Max Volume is:{macro_spline.integrate.volume()}")
+    macro_spline.insert_knots(
+        2,
+        np.linspace(
+            parametric_boundary_thickness,
+            1 - parametric_boundary_thickness,
+            tiling[2] - 1,
+        ),
+    )
+    tiling[2] = 1
+    volume_scaling = 1
 
     optimizer = Optimizer(
         microtile=sp.microstructure.tiles.Cross3DLinear(),
@@ -523,7 +532,7 @@ def main():
         macro_ctps=[],
         parameter_default_value=parameter_default_value,
         volume_scaling=volume_scaling,
-        micro_structure_keys={"center_expansion": 1.0, "closing_face": "z"},
+        micro_structure_keys={"center_expansion": 1.2, "closing_face": "z"},
         parameter_scaling=parameter_scaling_value,
     )
 
