@@ -308,6 +308,9 @@ class Optimizer:
 
         #
         if self.iteration == 1:
+            self.diffusion_solver.export_multipatch_object(
+                "multipatch_initial"
+            )
             self.diffusion_solver.export_paraview(
                 "initial", False, 5**3, True
             )
